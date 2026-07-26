@@ -1,0 +1,12 @@
+# WRDS 原始数据 —— 有许可限制，绝不上传
+data/
+
+# 大体积中间产物（可由代码重建）
+export/
+build/*.parquet
+
+# 杂项
+*.log
+.DS_Store
+.ipynb_checkpoints/
+__pycache__/

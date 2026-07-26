@@ -1,0 +1,73 @@
+列名,类型,覆盖率,中位数,说明
+eid,int64,100.0%,2.59e+05,事件唯一编号（= events.parquet 的行号，用于回溯各中间表）
+permno,int64,100.0%,7.784e+04,CRSP 股票永久标识（主键）
+ticker,string,100.0%,,I/B/E/S ticker（≤6 位字母，不是交易所代码）
+anndats,datetime64[ns],100.0%,,盈余公告日 —— 事件锚点
+td0,datetime64[ns],100.0%,,事件日 = 公告日当天或之后的第一个交易日
+td0_idx,int64,100.0%,3063,td0 在交易日历中的下标（CAR 窗口用它取值）
+pends,datetime64[ns],100.0%,,财季结束日
+actual_eps,Float64,93.9%,0.16,实际 EPS（I/B/E/S，已折算到最新拆股基准）
+anntims,string,100.0%,,公告时间（可判断盘前/盘后）
+lag,int64,100.0%,33,◆ LAG = anndats − pends（天）
+flag_lag_bad,bool,100.0%,,LAG < 0 或 > 180 天（异常报告滞后）
+ann_on_nontrading,bool,100.0%,,公告落在非交易日（已顺延到下一交易日）
+td0_gap_days,int64,100.0%,0,td0 − anndats 的天数（正常为 0-3；早于日历起点的事件会很大）
+flag_td0_gap,bool,100.0%,,"td0 与公告日相隔 >7 天或早于日历起点 → CAR 已置空（5,628 个事件）"
+flag_pre_calendar,bool,100.0%,,公告日早于交易日历起点 1996-01-02（CAR 无意义，已置空）
+flag_same_day_multi,bool,100.0%,,同一 permno 同一天公告多个财季（补报）
+is_latest_pends_on_day,bool,100.0%,,该公告日中是否为当期财季（补报里最新的一期）
+flag_link_extended,bool,100.0%,,IBES 链接在连接表末期仍有效（绝大多数本就能匹配，无风险）
+flag_beyond_link_end,bool,100.0%,,公告日晚于 2025-12-31，只因延长链接才存在（有错配风险）
+siccd,Int64,100.0%,4923,SIC 行业代码（行业固定效应用）
+primaryexch,string,100.0%,,主交易所 N=NYSE / A=AMEX / Q=NASDAQ
+cusip,string,99.1%,,8 位 CUSIP（来自 I/B/E/S）
+cname,string,99.1%,,公司名（I/B/E/S）
+year,int32,100.0%,2008,公告年
+ffyear,int32,100.0%,2007,Fama-French formation 年（7月至次年6月归属同一年）
+stk_ann_c2c,float64,97.9%,-6.25e-08,"个股 buy-and-hold 收益 [0,1]，C2C（未减基准）"
+stk_drift_c2c,float64,98.0%,0.01176,"个股 buy-and-hold 收益 [2,61]，C2C"
+n_days_ann_c2c,int32,100.0%,2,ANN 窗口内实际有 C2C 收益记录的天数（满窗=2）
+n_days_drift_c2c,int32,100.0%,60,DRIFT 窗口内实际有 C2C 收益记录的天数（满窗=60）
+stk_ann_o2o,float64,97.3%,4.391e-07,"个股 buy-and-hold 收益 [0,1]，O2O"
+stk_drift_o2o,float64,96.8%,0.0101,"个股 buy-and-hold 收益 [2,61]，O2O"
+n_days_ann_o2o,int32,100.0%,2,同上，O2O 口径
+n_days_drift_o2o,int32,100.0%,60,同上，O2O 口径
+port25,float64,88.8%,5,所属 size×B/M 组合编号 1-25 = (size_q−1)×5 + bm_q
+bench_ann_c2c,float64,87.8%,0.002005,"基准组合 buy-and-hold 收益 [0,1]，C2C"
+bench_drift_c2c,float64,87.8%,0.04447,"基准组合 buy-and-hold 收益 [2,61]，C2C"
+car_ann_c2c,float64,87.7%,-0.001594,"★ CAR 公告窗口 [0,1]，C2C 口径（主口径）"
+car_drift_c2c,float64,87.7%,-0.02708,"★ CAR 漂移窗口 [2,61]，C2C 口径（主口径）"
+bench_ann_o2o,float64,87.8%,0.002036,"基准组合 buy-and-hold 收益 [0,1]，O2O"
+bench_drift_o2o,float64,87.8%,0.04696,"基准组合 buy-and-hold 收益 [2,61]，O2O"
+car_ann_o2o,float64,87.2%,-3.309e-05,"★ CAR 公告窗口 [0,1]，O2O 口径"
+car_drift_o2o,float64,86.7%,-0.03273,"★ CAR 漂移窗口 [2,61]，O2O 口径"
+flag_short_window,bool,100.0%,,ANN 不足 2 天 或 DRIFT 不足 60 天
+consensus_f,Float64,68.3%,0.2,分析师共识预测 F（60 天窗口内每位分析师最新一条的中位数）
+n_analyst_sue,float64,68.3%,3,算这次共识用到的分析师人数（诊断用，非控制变量）
+fcst_last_dt,datetime64[ns],68.3%,,共识中最新一条预测的日期
+price_adj,Float64,98.5%,16.18,财季末股价，已折到与 EPS 相同的拆股基准（= |mthprc| / mthcumfacpr）
+prc_unadj,Float64,98.5%,15.94,财季末股价原值（HLT 的 <$1 清洗规则用的是这个）
+sue,Float64,66.4%,0.0005017,★ SUE 连续值 = (实际EPS − 共识预测) / 拆股调整后财季末股价
+sue_dec,float64,66.4%,5,★ SUE 十分位（按公告日所在日历季度独立分组，1=最负意外，10=最正）
+flag_sue_dropped,boolean,71.0%,,被 SUE 清洗规则剔除（股价<$1 或 |e|/|F| 超过股价）
+n_analyst_cover,float64,85.7%,6,上述分析师数的原始计数
+lnanalyst,float64,100.0%,1.792,◆ LNANALYST = log(1 + 公告前365天内出过预测的不同分析师数)
+me_jan,Float64,96.8%,3.741e+05,年初市值原值（千美元）
+size_dec,float64,96.8%,2,◆ SIZE：年初（上年12月末）市值的十分位，NYSE breakpoint
+bm_raw,Float64,88.8%,0.5269,BM 连续值 = BE×1000 / 上年12月末市值
+be,Float64,88.8%,185.5,账面权益 BE = SEQ + TXDITC − PS（百万美元）
+bm_dec,float64,88.8%,5,◆ BM：账面市值比十分位，NYSE breakpoint
+ym_ann,period[M],100.0%,,公告所在年月（TURN 的匹配键）
+turn,float64,96.9%,0.1151,◆ TURN：过去12个月的月均换手率
+rdate,datetime64[ns],98.2%,,IO 所用的 13F 报告期
+io,Float64,96.9%,0.5245,◆ IO：机构持股比例 = 13F Σshares / (shrout×1000)
+io_stale_days,float64,98.2%,34,IO 数据距公告日的天数（>200 天已置为缺失）
+datadate,datetime64[ns],94.9%,,EVOL/EPERSIST 所用的 Compustat 财季末
+evol,float64,93.9%,0.2823,◆ EVOL：过去16季季节差分 EPS 的标准差
+epersist,float64,92.7%,0.2008,◆ EPERSIST：同一序列的一阶自相关系数
+eps_stale_days,float64,94.9%,32,EVOL/EPERSIST 数据距公告日的天数（>400 天已置为缺失）
+lag2,int64,100.0%,1089,◆ LAG²
+lag3,int64,100.0%,3.594e+04,◆ LAG³
+month,int32,100.0%,6,公告月（1-12）
+dow,int32,100.0%,3,星期几（1=周一）
+qtr,object,100.0%,,公告所在日历季度（SUE 分位的分组键）

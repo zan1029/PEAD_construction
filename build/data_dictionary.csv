@@ -63,8 +63,8 @@ rdate,datetime64[ns],98.2%,,IO 所用的 13F 报告期
 io,Float64,96.9%,0.5245,◆ IO：机构持股比例 = 13F Σshares / (shrout×1000)
 io_stale_days,float64,98.2%,34,IO 数据距公告日的天数（>200 天已置为缺失）
 datadate,datetime64[ns],94.9%,,EVOL/EPERSIST 所用的 Compustat 财季末
-evol,float64,93.9%,0.2823,◆ EVOL：过去16季季节差分 EPS 的标准差
-epersist,float64,92.7%,0.2008,◆ EPERSIST：同一序列的一阶自相关系数
+evol,float64,93.9%,0.2823,◆ EVOL (Earnings Volatility) 盈余波动率：过去 16 财季(4年)内 Δ₄EPS 的样本标准差，美元/股
+epersist,float64,92.7%,0.2008,◆ EPERSIST (Earnings Persistence) 盈余持续性：同一 Δ₄EPS 序列的一阶自相关，−1~1
 eps_stale_days,float64,94.9%,32,EVOL/EPERSIST 数据距公告日的天数（>400 天已置为缺失）
 lag2,int64,100.0%,1089,◆ LAG²
 lag3,int64,100.0%,3.594e+04,◆ LAG³

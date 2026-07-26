@@ -17,7 +17,7 @@ def chk(label, actual, claimed, tol=0):
 
 # --- 目录 ---
 chk("data/ parquet 数", len(glob.glob("data/*.parquet")), 102)
-chk("build/ parquet 数", len(glob.glob("build/*.parquet")), 17)
+chk("build/ parquet 数", len(glob.glob("build/*.parquet")), 19)
 chk("export/ parquet 数", len(glob.glob("export/*.parquet")), 1)
 
 # --- 原始数据行数 ---

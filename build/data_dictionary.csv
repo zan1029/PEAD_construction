@@ -52,8 +52,8 @@ sue_dec,float64,66.4%,5,★ SUE decile 十分位（按公告日所在日历季�
 flag_sue_dropped,boolean,71.0%,,被 SUE 清洗规则剔除（股价<$1 或 |e|/|F| 超过股价）
 n_analyst_cover,float64,85.7%,6,上述分析师数的原始计数
 lnanalyst,float64,100.0%,1.792,◆ LNANALYST (Log of 1 + Number of Analysts) = log(1 + 公告前 365 天内出过预测的不同分析师数)
-me_jan,Float64,96.8%,3.741e+05,ME (Market Equity) 年初市值原值，千美元
-size_dec,float64,96.8%,2,◆ SIZE (Firm Size decile) 规模十分位：年初（上年12月末）市值，用 NYSE 股票算断点
+me_jun,Float64,96.6%,3.759e+05,ME (Market Equity) formation 年 6 月末市值，千美元（SIZE 十分位的排序变量，HLT §III.A）
+size_dec,float64,96.6%,2,◆ SIZE (Firm Size decile) 规模十分位：年初（上年12月末）市值，用 NYSE 股票算断点
 bm_raw,Float64,88.8%,0.5269,BM (Book-to-Market) 连续值 = BE×1000 / 上年12月末 ME（单位对齐：百万→千）
 be,Float64,88.8%,185.5,BE (Book Equity) 账面权益 = SEQ (Stockholders Equity) + TXDITC (Deferred Taxes) − PS (Preferred Stock)，百万美元
 bm_dec,float64,88.8%,5,◆ BM (Book-to-Market) decile 账面市值比十分位，用 NYSE 股票算断点
@@ -64,7 +64,7 @@ io,Float64,96.9%,0.5245,◆ IO (Institutional Ownership) 机构持股比例 = 13
 io_stale_days,float64,98.2%,34,IO 数据距公告日的天数（>200 天已置为缺失）
 datadate,datetime64[ns],94.9%,,EVOL/EPERSIST 所用的 Compustat 财季末
 evol,float64,93.9%,0.2823,◆ EVOL (Earnings Volatility) 盈余波动率：过去 16 财季(4年)内 Δ₄EPS 的样本标准差，美元/股
-epersist,float64,92.7%,0.2008,◆ EPERSIST (Earnings Persistence) 盈余持续性：同一 Δ₄EPS 序列的一阶自相关，−1~1
+epersist,float64,93.9%,0.2035,◆ EPERSIST (Earnings Persistence) 盈余持续性：过去 16 财季 split-adjusted 季度 EPS 水平值的一阶自相关，−1~1（EVOL 用的是 Δ₄EPS，两者序列不同）
 eps_stale_days,float64,94.9%,32,EVOL/EPERSIST 数据距公告日的天数（>400 天已置为缺失）
 lag2,int64,100.0%,1089,◆ LAG² 报告滞后的平方
 lag3,int64,100.0%,3.594e+04,◆ LAG³ 报告滞后的三次方

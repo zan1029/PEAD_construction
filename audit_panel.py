@@ -65,7 +65,7 @@ chk("CAR ≥ −1 附近", p["car_ann_c2c"].dropna().min() > -1.1,
 
 # ---------- 4. 缺失一致性 ----------
 chk("sue_dec 不出现在 sue 缺失处", not (p["sue_dec"].notna() & p["sue"].isna()).any())
-chk("size_dec 不出现在 me_jan 缺失处", not (p["size_dec"].notna() & p["me_jan"].isna()).any())
+chk("size_dec 不出现在 me_jun 缺失处", not (p["size_dec"].notna() & p["me_jun"].isna()).any())
 chk("bm_dec 不出现在 bm_raw 缺失处", not (p["bm_dec"].notna() & p["bm_raw"].isna()).any())
 chk("CAR 缺失 ⟺ port25 缺失或个股无数据",
     (p.loc[p["port25"].isna(), "car_ann_c2c"].isna()).all())

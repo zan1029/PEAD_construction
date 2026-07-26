@@ -85,11 +85,11 @@ chk("sue_dec 错配", int((sue["sue_dec"].notna() & sue["sue"].isna()).sum()), 0
 panel = pd.read_parquet("build/pead_panel.parquet")
 chk("panel 行数", len(panel), 517955)
 chk("panel 列数", panel.shape[1], 72)
-for c, v in [("size_dec", 96.8), ("bm_dec", 88.8), ("lnanalyst", 100.0), ("lag", 100.0),
-             ("io", 96.9), ("evol", 93.9), ("epersist", 92.7), ("turn", 96.9)]:
+for c, v in [("size_dec", 96.6), ("bm_dec", 88.8), ("lnanalyst", 100.0), ("lag", 100.0),
+             ("io", 96.9), ("evol", 93.9), ("epersist", 93.9), ("turn", 96.9)]:
     chk(f"{c} 覆盖率%", round(100 * panel[c].notna().mean(), 1), v, tol=0.05)
 need = ["car_ann_c2c", "car_drift_c2c", "sue", "size_dec", "bm_dec", "lnanalyst", "lag", "io", "evol", "epersist", "turn"]
-chk("可回归样本", int(panel[need].notna().all(axis=1).sum()), 302564)
+chk("可回归样本", int(panel[need].notna().all(axis=1).sum()), 303466)
 
 # --- PEAD 验证（与回归准备.ipynb 的 sort_sample 同口径：有 SUE 十分位 + 同日多季报只留最新） ---
 chk("有 SUE 的事件（全部）", int(panel["sue_dec"].notna().sum()), 344026)
@@ -133,11 +133,11 @@ chk("PEAD 图数量", len(glob.glob("build/pead_paths*.png")), 3)
 # --- Baseline 回归结果（README「主要结果」一节） ---
 reg = pd.read_csv("build/baseline_results.csv")
 reg = reg[reg["spec"] == "(0a) no interactions"].set_index(["window", "returns"])
-for (w, c), b, t in [(("ANN", "C2C"), 0.0796, 100.5), (("DRIFT", "C2C"), 0.0193, 13.6),
-                     (("ANN", "O2O"), 0.0726, 98.4), (("DRIFT", "O2O"), 0.0298, 20.3)]:
+for (w, c), b, t in [(("ANN", "C2C"), 0.0795, 100.5), (("DRIFT", "C2C"), 0.0196, 13.8),
+                     (("ANN", "O2O"), 0.0724, 98.3), (("DRIFT", "O2O"), 0.0301, 20.5)]:
     chk(f"回归 β₁ {w} {c}", round(float(reg.loc[(w, c), "beta_SUE"]), 4), b, tol=5e-5)
     chk(f"回归 t  {w} {c}", round(float(reg.loc[(w, c), "t_firm"]), 1), t, tol=0.05)
-chk("回归样本量 N", int(reg.loc[("ANN", "C2C"), "N"]), 301383)
+chk("回归样本量 N", int(reg.loc[("ANN", "C2C"), "N"]), 302274)
 
 # --- 数据字典 ---
 dd = pd.read_csv("build/data_dictionary.csv")

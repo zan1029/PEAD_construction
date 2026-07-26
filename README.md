@@ -82,15 +82,44 @@ Part B/C 的回归一律用当季分位。**
 
 ## Baseline 回归设定
 
+### 主设定
+
+下表是本项目 baseline 的**完整设定**，后面接 moderator（ATT / ADOPT / OUT）与 LLM signal 时
+一律沿用这一套。其他变体都在 §7 作为稳健性检验列出。
+
+| 组成部分 | 取值 |
+|---|---|
+| **样本** | 1996-01-02 起的盈余公告，要求：有 SUE 十分位、10 个控制变量齐全、CAR 可得、同日多季报只留最新一期（`is_latest_pends_on_day`）、剔除异常报告滞后（`flag_lag_bad`） |
+| **被解释变量** | $CAR[0,1]$（ANN）与 $CAR[2,61]$（DRIFT），buy-and-hold 个股收益减 size×B/M 25 组基准，**小数**计。C2C 与 O2O 各一套，共 4 条回归 |
+| **核心自变量** | `sue_rank` —— 由原始 `sue` = `(e−F)/P` 按**当季**截面排出十分位 `sue_dec`（1–10），再取 $(sue\_dec-1)/9$ 映到 $[0,1]$。进回归的是 `sue_rank` |
+| **控制变量** | 10 个，定义与 HLT 2009 §III.A **逐条一致**：SIZE、BM、LNANALYST、LAG、LAG²、LAG³、IO、EVOL、EPERSIST、TURN |
+| **固定效应** | **公司** + 年 + 月 + 星期几 + FF10 行业 |
+| **标准误** | 按**公司**聚类（CRV1） |
+| **缩尾** | CAR、EVOL、TURN、IO、SUE 各在 1% / 99% 处缩尾 |
+| **两个设定** | **(0a)** 控制变量不与 SUE 交互；**(0b)** 10 个控制变量全部与 SUE 交互（交互前先中心化） |
+
+**三处与 HLT 2009 不同，都是有意的选择：**
+
+| | 我们 | HLT 2009 | 为什么这样选 | 影响 |
+|---|---|---|---|---|
+| 公司固定效应 | **加** | 不加 | LLM signal 的新闻覆盖度在公司间差异极大（大盘公司新闻多）。不加公司 FE，后面的 $\beta_5$ 可能捡到"哪类公司被覆盖"而不是"什么时候被分心"。三个 moderator 的变异都在事件/时间层面，公司内变异充足，加了不吃识别力 | DRIFT 的 $\beta_1$ 从 0.0279 降到 0.0196 —— 读数更保守 |
+| 聚类 | **公司** | 公告日 | 面板跨 30 年、每家公司平均 27 个事件，公司内序列相关是首要担心 | t 值 14 vs 13，无实质影响；公告日聚类的结果同时报出 |
+| 缩尾 1%/99% | **做** | 不做 | 极端 CAR 与极端 EVOL/TURN 会主导系数 | 系数动 3%，t 从 11 升到 14 —— 方向是让结果更显著，故两版都报 |
+
+刻度上还有两处纯读数的差异：论文的 SUE 是 1–10 整数、CAR 用百分点，我们是 $[0,1]$ 与小数。
+单调线性变换，t 值完全相同。`回归准备.ipynb` §B.6 有一张完全照论文刻度与设定的复制表。
+
+### 方程
+
 $w \in \{ANN,\ DRIFT\}$，收益口径 $\in \{C2C,\ O2O\}$ —— 每个设定 4 条回归。
 
 **(0a) 不带交互项**
 
-$$CAR^w_{i,d}=\alpha+\beta_1 SUE_{i,d}+\sum_{k=1}^{10}\gamma_k X_{k,i,d}+\theta_i+\eta_t+\psi_j+\varepsilon_{i,d}$$
+$$CAR^w_{i,d}=\alpha+\beta_1 SUE^{rank}_{i,d}+\sum_{k=1}^{10}\gamma_k X_{k,i,d}+\theta_i+\eta_t+\psi_j+\varepsilon_{i,d}$$
 
 **(0b) 加入控制变量与 SUE 的交互项**
 
-$$CAR^w_{i,d}=\alpha+\beta_1 SUE_{i,d}+\sum_k\gamma_k X_{k,i,d}+\sum_k\delta_k\left(X_{k,i,d}\times SUE_{i,d}\right)+\theta_i+\eta_t+\psi_j+\varepsilon_{i,d}$$
+$$CAR^w_{i,d}=\alpha+\beta_1 SUE^{rank}_{i,d}+\sum_k\gamma_k X_{k,i,d}+\sum_k\delta_k\left(X_{k,i,d}\times SUE^{rank}_{i,d}\right)+\theta_i+\eta_t+\psi_j+\varepsilon_{i,d}$$
 
 | 记号 | 含义 |
 |---|---|
@@ -98,7 +127,24 @@ $$CAR^w_{i,d}=\alpha+\beta_1 SUE_{i,d}+\sum_k\gamma_k X_{k,i,d}+\sum_k\delta_k\l
 | $\theta_i$ | 公司固定效应（11,091 家，用组内去均值吸收） |
 | $\eta_t$ | 年 + 月 + 星期几固定效应 |
 | $\psi_j$ | 行业固定效应，Fama-French 10 分类（由 SIC 映射） |
-| $\beta_1$ | **核心系数**。SUE 用十分位缩放到 [0,1]，故 $\beta_1$ 直接读作「D10 相对 D1 的 CAR 差异」 |
+| $SUE^{rank}$ | 进回归的核心自变量 = $(sue\_dec-1)/9 \in [0,1]$，由当季十分位映射而来 |
+| $\beta_1$ | **核心系数**。因为 $SUE^{rank}$ 从 0 走到 1 正好是 D1 到 D10，$\beta_1$ 直接读作「D10 相对 D1 的 CAR 差异」 |
+
+**为什么回归里用十分位 rank 而不是原始 SUE 值** —— 这是 HLT 2009 §IV.A.1 的明确选择，原文：
+
+> "Because the relation between announcement-day abnormal returns and earnings surprise is
+> **highly nonlinear** (e.g., Kothari (2001)), with small negative surprises having big effects,
+> we use the **decile rank of forecast error** as opposed to the forecast error itself following past
+> literature. This **reduces the influence of outliers**, and the relation between CAR[0,1] and the
+> earnings surprise deciles is **almost linear**."
+
+三个理由：① 原始 $(e-F)/P$ 分布极厚尾，少数极端值主导系数；② CAR 对原始 SUE 高度非线性、
+对十分位却几乎线性（论文 Figure 1）；③ 断点按**日历季度**重算，自动吸收盈余意外分布的时间漂移。
+
+**刻度**：论文的 FE 是 **1–10 的整数**（Table III 表注 "FE = 1: lowest, 10: highest"），
+系数读作"每升一档多少个百分点"；我们除以 9 缩放到 [0,1]，是单调线性变换 —— t 值完全相同、
+$\beta_1$ 差 9 倍，好处是直接读成 D10−D1 的价差。原始连续 SUE 只在稳健性一节单独跑一行。
+`回归准备.ipynb` §B.6 有一张完全照论文刻度与设定的对照表。
 
 标准误按**公司**聚类；同时报告按**公告日**聚类作为对照。
 交互项中的控制变量已中心化，故 (0b) 的 $\beta_1$ 是控制变量取均值处的效应，与 (0a) 可比。
@@ -121,12 +167,12 @@ $SUE$ 在回归里始终是 **`sue_rank` = (十分位 − 1)/9 ∈ [0,1]**，不
 
 对照 BT (1989) 报告的 60 日对冲收益 6.31%（1974–1986 样本），方向一致、量级同级。
 
-**截面回归**（设定 0a，$\beta_1$，N = 301,383）：
+**截面回归**（设定 0a，$\beta_1$，N = 302,274）：
 
 | 窗口 | C2C | O2O |
 |---|---|---|
-| ANN | 0.0796 (t = 100.5) | 0.0726 (t = 98.4) |
-| **DRIFT** | **0.0193 (t = 13.6)** | **0.0298 (t = 20.3)** |
+| ANN | 0.0795 (t = 100.5) | 0.0724 (t = 98.3) |
+| **DRIFT** | **0.0196 (t = 13.8)** | **0.0301 (t = 20.5)** |
 
 估计用 `pyfixest`（Python 版 `reghdfe`），标准误按公司聚类；按公告日聚类的 t 值分别为
 119.5 / 13.1（C2C）与 126.8 / 19.5（O2O），结论不依赖聚类方式。
@@ -263,7 +309,7 @@ I/B/E/S detail ───────────────┼─→ Step 5  SU
 | `events.parquet` | Step 3 | 517,955 | permno × 公告日 × 财季 | 事件表：`anndats`/`td0`/`td0_idx`/`pends`/`actual_eps`/`lag` 及各类标记列 |
 | `car.parquet` | Step 4 | 517,955 | eid | 四个 CAR 及其分项：`stk_*`（个股）、`bench_*`（基准）、`n_days_*`（窗口天数）、`port25` |
 | `sue.parquet` | Step 5 | 517,955 | eid | `sue`/`sue_dec`/`consensus_f`/`price_adj`/`prc_unadj`/`n_analyst_sue`/`flag_sue_dropped` |
-| `ctrl_size.parquet` | Step 6 | 250,874 | permno × 年 | `me_jan`（年初市值）、`size_dec` |
+| `ctrl_size.parquet` | Step 6 | 260,320 | permno × formation 年 | `me_jun`（6 月末市值）、`size_dec` |
 | `ctrl_bm.parquet` | Step 6 | 135,230 | permno × formation 年 | `be`、`bm_raw`、`bm_dec` |
 | `ctrl_turn.parquet` | Step 6 | 2,871,577 | permno × 月 | `turn`（过去 12 个月月均换手率） |
 | `ctrl_io.parquet` | Step 6 | 889,973 | permno × 13F 报告期 | `io`（机构持股比例） |
@@ -310,7 +356,7 @@ I/B/E/S detail ───────────────┼─→ Step 5  SU
 | **LAG** | Reporting Lag | 报告滞后 | `anndats − pends`（天），另有 `LAG²` `LAG³` |
 | **IO** | Institutional Ownership | 机构持股比例 | 13F 持股合计 / 流通股本 |
 | **EVOL** | **Earnings Volatility** | 盈余波动率 | 过去 **16 个财季（4 年）** 内、同比变化 Δ₄EPS 的**样本标准差**（美元/股） |
-| **EPERSIST** | **Earnings Persistence** | 盈余持续性 | 同一条 Δ₄EPS 序列、同一 16 季窗口的**一阶自相关系数**（−1 ~ 1） |
+| **EPERSIST** | **Earnings Persistence** | 盈余持续性 | 16 季窗口内**季度 EPS 水平值**的一阶自相关系数（−1 ~ 1），照 HLT 2009 §III.A |
 | **TURN** | Share Turnover | 换手率 | 过去 12 个月的月均换手率 |
 
 ### 1.2 收益口径
@@ -529,7 +575,13 @@ v5 是整条 O2O residual / factor 线的基础，用它可保证与项目其他
 | 生效期 | 当年 **7 月 至 次年 6 月**，成员不变 | — |
 
 组合编号 `port25 = (size_q − 1) × 5 + bm_q`，取值 1–25。
-每日组合收益取**等权平均**（HLT 用等权），C2C 与 O2O **各算一套**，绝不混用。
+每日组合收益取**等权平均**，C2C 与 O2O **各算一套**，绝不混用。
+
+> **与 HLT 2009 的差异**：论文用的是 Kenneth French 网站现成的 25 个 size-B/M 组合日收益
+> （原文 §II："The daily returns of the 25 size-B/M portfolios are from Kenneth French's web site"），
+> 并未说明加权方式；French 的标准 25 组是**市值加权**。本项目自建组合有两个必须的理由：
+> ① O2O 口径 French 没有提供，必须自己算，两个口径要同源才可比；
+> ② 样本期到 2026 年，French 的数据发布有滞后。自建用 NYSE 断点 + 等权。
 
 **验证**（2000–2019 年化收益，C2C）：
 
@@ -655,7 +707,7 @@ $$SUE_{i,d}=\frac{e_{i,d}-F_{i,d}}{P_{i,d}}$$
 
 | 输出文件 | 行数 | 粒度 | 构造 |
 |---|---|---|---|
-| `ctrl_size.parquet` | 250,874 | firm×year | 上年 12 月末市值 → NYSE 十分位 |
+| `ctrl_size.parquet` | 260,320 | firm×ffyear | formation 年 6 月末市值 → NYSE 十分位 |
 | `ctrl_bm.parquet` | 135,230 | firm×formation年 | 与 25 组同一套 BE/ME → NYSE 十分位（独立于 size） |
 | `ctrl_turn.parquet` | 2,871,577 | firm×month | 过去 12 个月 `mthvol/(shrout×1000)` 的均值（min 6 个月） |
 | `ctrl_io.parquet` | 889,973 | firm×quarter | `Σshares/(shrout×1000)`，同 (mgrno,cusip,rdate) 多次申报取最新 `fdate` |
@@ -664,44 +716,53 @@ $$SUE_{i,d}=\frac{e_{i,d}-F_{i,d}}{P_{i,d}}$$
 
 **EVOL（Earnings Volatility，盈余波动率）与 EPERSIST（Earnings Persistence，盈余持续性）的构造**
 
-两者共用同一条序列，分三步：
+两者都取**过去 16 个财季（4 年）**的窗口、都要求窗口内至少 4 个非缺失观测。
+序列各用各的，照 HLT 2009 §III.A 原文：
 
-**① 拆股调整**：`eps_adj = epspxq / ajexq`，要求 `ajexq ≥ 0.01`（见 §6.3）。
+> "Earnings Persistence is the first-order autocorrelation coefficient of **quarterly earnings per
+> share** during the past 4 years (split-adjusted; minimum four observations required) ...
+> Earnings Volatility is the standard deviation during the preceding 4 years of the **deviations of
+> quarterly earnings from 1-year-ago earnings** (split-adjusted; minimum four observations required)."
+
+**① 拆股调整**（两者共用）：`eps_adj = epspxq / ajexq`，要求 `ajexq ≥ 0.01`（见 §6.3）。
 `epspxq` 是当期口径的每股金额，拆股后数字凭空变小，除掉累积调整因子才能跨季比较。
 
-**② 季节差分（同比变化）**：
+**② EVOL —— 季节差分序列的标准差**
 
-$$\Delta_4 EPS_t = eps\_adj_t - eps\_adj_{t-4}$$
+$$\Delta_4 EPS_t = eps\_adj_t - eps\_adj_{t-4},\qquad
+EVOL_t = \mathrm{sd}\big(\Delta_4 EPS_{t-15..t}\big)\ (\text{ddof}=1)$$
 
 减的是**去年同一财季**，不是上一季 —— 很多公司盈余有强季节性（零售 Q4 最高），
-用相邻季度差分测到的主要是季节规律。用 `fyearq×4 + fqtr` 构造绝对季度序号后自连接 `+4`
-来配对，不靠行序（Compustat 会缺季度、也会变更财年）。
+用相邻季度差分测到的主要是季节规律。单位：美元/股，取值 ≥ 0。
 
-**③ 滚动窗口统计**：对每个财季 t，取窗口 **[t−15, t] 共 16 个财季 = 4 年**内的 Δ₄ 序列
-（最少 4 个非缺失观测，否则记 `NaN`）：
+**③ EPERSIST —— EPS 水平值的一阶自相关**
 
-| | 定义 | 取值范围 | 单位 |
-|---|---|---|---|
-| **EVOL**_t | 该窗口内 Δ₄ 的**样本标准差**（`ddof=1`，围绕**窗口自身均值**的离散度） | ≥ 0 | 美元/股 |
-| **EPERSIST**_t | 同一窗口内 `corr(Δ₄[s], Δ₄[s−1])` | −1 ~ 1 | 无量纲 |
+$$EPERSIST_t = \mathrm{corr}\big(eps\_adj_s,\ eps\_adj_{s-1}\big),\quad s \in [t-15,\ t]$$
 
-**没有外部基准**：EVOL 衡量的是该公司自己的 Δ₄ 围绕**它自己这 16 季的均值**波动多大，
-不与其他公司或市场比较。截面比较是在回归里通过系数完成的。
+配对的是 **t 与 t−1（相邻财季）的 EPS 水平值**。取值 −1 ~ 1，无量纲。
 
-窗口每季度前滚一格，所以每个公司-财季都有一对独立的值。
-自相关用滚动和向量化实现（`rolling.apply` 慢 10 倍：5 分钟 → 31 秒），
-公式 $\rho=\frac{\overline{xy}-\bar x\bar y}{\sqrt{(\overline{x^2}-\bar x^2)(\overline{y^2}-\bar y^2)}}$，
-其中 x = Δ₄[t]、y = Δ₄[t−1]，六个滚动和拼出。
+两处都用 `fyearq×4 + fqtr` 构造的绝对季度序号自连接来对齐（`+4` 配 EVOL、`+1` 配 EPERSIST）：
+Compustat 会缺季度、也会变更财年，按绝对序号配对才能保证取到的确实是目标财季。
+自相关用滚动和向量化实现（`rolling.apply` 慢 10 倍），
+公式 $\rho=\frac{\overline{xy}-\bar x\bar y}{\sqrt{(\overline{x^2}-\bar x^2)(\overline{y^2}-\bar y^2)}}$，六个滚动和拼出。
 
-**举例**（2015–2019 年，同一 16 季窗口）：
+**实测分布**（`build/ctrl_evol_epersist.parquet`，692,836 条有 EPERSIST）：
 
-| | Δ₄ 序列的形态 | EVOL | EPERSIST |
-|---|---|---|---|
-| 苹果 | +0.167, +0.143, +0.135, +0.055, −0.107 … 平滑移动 | **0.100** | **0.763** |
-| 微软 | −0.07, −0.96, +0.06, … −1.63, +1.91 … 脉冲式跳变 | **0.748** | **0.051** |
+| 分位 | P10 | P25 | 中位数 | P75 | P90 | 均值 |
+|---|---|---|---|---|---|---|
+| EPERSIST | −0.195 | −0.038 | **0.184** | 0.482 | 0.721 | 0.221 |
 
-微软的两个极端值来自一次性项目（2015Q4 诺基亚减值、2018Q2 税改计提），
-之后一年基数低又反弹回来 —— 幅度大（EVOL 高）但前后无关联（EPERSIST 低）。
+回归样本内均值 **0.254**、中位数 0.220。论文 Table I Panel B 报告的各组均值是 **0.342–0.431**，
+比我们高。两个可解释的来源：① 论文样本 1995–2004 且只含 I/B/E/S 覆盖 + 控制变量齐全的公司，
+偏大盘、盈余更平滑；② 我们的样本期长一倍多、覆盖到更多小盘股。方向与量级一致。
+
+**两个变量的分工**：EVOL 用 Δ₄ 消掉季节性，量的是"盈余波动多大"；
+EPERSIST 用水平值，量的是"盈余水平有多黏"。季度 EPS 本身有强季节性
+（苹果 Q1 假日季远高于 Q3），所以水平值的相邻季相关度普遍偏低 ——
+实测苹果 2015–2019 的 EPERSIST 中位数 0.127、微软 0.017。
+
+**基准是公司自己**：EVOL 衡量该公司的 Δ₄ 围绕**它自己这 16 季的均值**波动多大，
+截面比较在回归里通过系数完成。窗口每季度前滚一格。
 
 **单位陷阱**（都已实测验证）：
 - `mthvol` 是**股数**，`shrout` 是**千股** → TURN = `mthvol/(shrout×1000)`。AAPL 2015-06 = 0.154 ✓
@@ -720,16 +781,16 @@ $$\Delta_4 EPS_t = eps\_adj_t - eps\_adj_{t-4}$$
 
 | 变量 | 覆盖 | 中位数 |
 |---|---|---|
-| `size_dec` | 96.8% | 2 |
+| `size_dec` | 96.6% | 2 |
 | `bm_dec` | 88.8% | 5 |
 | `lnanalyst` | 100% | 1.79 |
 | `lag` | 100% | 33 天 |
 | `io` | 96.9% | 0.525 |
 | `evol` | 93.9% | 0.282 |
-| `epersist` | 92.7% | 0.201 |
+| `epersist` | 93.9% | 0.203 |
 | `turn` | 96.9% | 0.115 |
 
-**关键变量全齐（可进 baseline 回归）：302,564 条（58.4%）**
+**关键变量全齐（可进 baseline 回归）：303,466 条（58.6%）**
 ≈ 有 SUE (66.4%) × 有 CAR (88.7%) × 有 BM (88.8%)。
 
 ### Step 8 — 数据字典
@@ -784,7 +845,7 @@ $$\Delta_4 EPS_t = eps\_adj_t - eps\_adj_{t-4}$$
 
 | 列 | 说明 |
 |---|---|
-| ◆ `size_dec` / `me_jan` | 规模十分位 / 年初市值原值（千美元） |
+| ◆ `size_dec` / `me_jun` | 规模十分位 / formation 年 6 月末市值原值（千美元） |
 | ◆ `bm_dec` / `bm_raw` / `be` | B/M 十分位 / 连续值 / 账面权益（百万美元） |
 | ◆ `lnanalyst` / `n_analyst_cover` | 覆盖分析师数的对数 / 原始计数 |
 | ◆ `lag` `lag2` `lag3` | 报告滞后及高阶项 |
@@ -899,7 +960,7 @@ O2O 版在最小市值五分位偏差更大（组合年化差 +2.7 ~ +5.8pp）�
 
 `pf.feols` 默认丢弃固定效应中只有单个观测的组（singleton）—— 只出现过一次公告的公司
 在吸收公司固定效应后残差恒为 0，既不贡献识别信息又会虚增自由度，这是 `reghdfe` 的标准行为。
-本项目因此从 302,054 降到 **301,383** 个观测（少 671 个），属预期内。
+本项目因此从 302,952 降到 **302,274** 个观测（少 678 个），属预期内。
 
 ### 6.11 内存
 

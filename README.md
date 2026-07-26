@@ -347,7 +347,7 @@ I/B/E/S detail ───────────────┼─→ Step 5  SU
 | `ctrl_lnanalyst.parquet` | Step 6 | 443,648 | eid | `n_analyst_cover`（公告前 365 天覆盖分析师数） |
 | `ctrl_att.parquet` | Step 6.2 | 517,955 | eid | `n_ann_day`（同日全市场公告家数）、`nrank`（季度内十分位）、`att` = 11 − NRANK |
 | `llm_daily.parquet` | `build_llm_signal.py` | 2,296,215 | permno × 交易日 | `td_idx`、`n_news`、`pred_mean`（当天所有新闻 `pred` 的平均 = 这一天的 LLM signal） |
-| `llm_signal.parquet` | `build_llm_signal.py` | 517,955 | eid | 各窗口的 `llm_sum` / `llm_mean` / `llm_ndays` / `llm_n` / `llm_rank`。窗口后缀编码偏移量：`0_1` = [d, d+1]，`m1_1` = [d−1, d+1] |
+| `llm_signal.parquet` | `build_llm_signal.py` | 517,955 | eid | 各窗口的 `llm_cum`（窗口内 (1+pred) 连乘再减 1）/ `llm_mean` / `llm_ndays` / `llm_n` / `llm_rank`。窗口后缀编码偏移量：`0_1` = [d, d+1]，`m1_1` = [d−1, d+1] |
 | **`pead_panel.parquet`** | **Step 7** | **517,955** | **eid** | **最终大表，75 列**，上述全部合并 + LAG 高阶项 + 日历键。列字典见 §5 |
 | `car_path.parquet` | `build_car_path.py` | 4,880 | 分位口径 × 收益口径 × 十分位 × 事件日 | 事件时间路径：`grouping`（`current` 当季断点 / `prior` 上季断点）/`conv`/`sue_dec`/`event_day`（−60…+61）/`car`/`n`，三张 PEAD 图的数据源 |
 

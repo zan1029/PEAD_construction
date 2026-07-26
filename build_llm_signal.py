@@ -11,7 +11,7 @@
 
 两层产出：
   build/llm_daily.parquet   公司 × 交易日：n_news、pred_mean
-  build/llm_signal.parquet  事件级：各窗口的 sum / mean / ndays / n / rank
+  build/llm_signal.parquet  事件级：各窗口的 cum / mean / ndays / n / rank
 
 窗口后缀直接编码偏移量，一看即知覆盖哪几天：
   [d,   d+1] → 0_1        [d-1, d+1] → m1_1
@@ -110,13 +110,16 @@ print(f"\n事件 {len(ev):,}", flush=True)
 codes, uniq = pd.factorize(daily["permno"])
 NP = len(uniq)
 pos = codes.astype("int64") * (NDAY + 1) + daily["td_idx"].to_numpy("int64") + 1
-cum_sum = np.zeros(NP * (NDAY + 1), dtype="float64")
+cum_log = np.zeros(NP * (NDAY + 1), dtype="float64")   # log(1+pred) 的累积 → 连乘
+cum_raw = np.zeros(NP * (NDAY + 1), dtype="float64")   # pred 的累积 → 算算术平均
 cum_n = np.zeros(NP * (NDAY + 1), dtype="float64")
 cum_d = np.zeros(NP * (NDAY + 1), dtype="float64")
-np.add.at(cum_sum, pos, daily["pred_mean"].to_numpy("float64"))
+_pm = daily["pred_mean"].to_numpy("float64")
+np.add.at(cum_log, pos, np.log1p(_pm))
+np.add.at(cum_raw, pos, _pm)
 np.add.at(cum_n, pos, daily["n_news"].to_numpy("float64"))
 np.add.at(cum_d, pos, 1.0)
-for arr in (cum_sum, cum_n, cum_d):
+for arr in (cum_log, cum_raw, cum_n, cum_d):
     v = arr.reshape(NP, NDAY + 1)
     v.cumsum(axis=1, out=v)
 
@@ -134,13 +137,15 @@ for a, b in WINDOWS:
     i_hi = row * (NDAY + 1) + hi + 1
     i_lo = row * (NDAY + 1) + lo
     valid = has & (hi >= lo)
-    s = np.where(valid, cum_sum[i_hi] - cum_sum[i_lo], np.nan)
+    lg = np.where(valid, cum_log[i_hi] - cum_log[i_lo], np.nan)
+    rw = np.where(valid, cum_raw[i_hi] - cum_raw[i_lo], np.nan)
     nn = np.where(valid, cum_n[i_hi] - cum_n[i_lo], 0.0)
     nd = np.where(valid, cum_d[i_hi] - cum_d[i_lo], 0.0)
     out[f"llm_n_{tag}"] = nn.astype("int32")
     out[f"llm_ndays_{tag}"] = nd.astype("int8")
-    out[f"llm_sum_{tag}"] = np.where(nd > 0, s, np.nan)
-    out[f"llm_mean_{tag}"] = np.where(nd > 0, s / np.where(nd > 0, nd, 1), np.nan)
+    # 与 CAR 同法：窗口内各日 (1+pred) 连乘再减 1
+    out[f"llm_cum_{tag}"] = np.where(nd > 0, np.expm1(lg), np.nan)
+    out[f"llm_mean_{tag}"] = np.where(nd > 0, rw / np.where(nd > 0, nd, 1), np.nan)
     print(f"  窗口 [{a:+d},{b:+d}] → 后缀 {tag}: 有新闻的事件 {int((nd > 0).sum()):,} "
           f"({(nd > 0).mean():.1%}) | 平均 {nn[nd > 0].mean():.2f} 条 / {nd[nd > 0].mean():.2f} 天",
           flush=True)
@@ -149,7 +154,7 @@ for a, b in WINDOWS:
 qtr = ev["anndats"].dt.to_period("Q").to_numpy()
 for a, b in WINDOWS:
     tag = wname(a, b)
-    x = pd.Series(out[f"llm_sum_{tag}"].to_numpy(), index=out.index)
+    x = pd.Series(out[f"llm_cum_{tag}"].to_numpy(), index=out.index)
     dec = (x.groupby(qtr)
             .transform(lambda s: pd.qcut(s.rank(method="first"), 10, labels=False) + 1
                        if s.notna().sum() >= MIN_Q_RANK else np.nan))

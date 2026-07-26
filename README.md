@@ -152,10 +152,28 @@ yifei 的 16 GB O2O 面板，跑一次就够，没必要每次执行 notebook �
 | `数据view.ipynb` | 草稿 | 临时查看数据用 |
 | `export_run.log` | 日志 | `export_returns.py` 的运行记录 |
 
-**运行环境**：`/home/zan1/envs/nlp3/bin/python`（Python 3.11 + pandas 2.2.3 + pyfixest 0.60），
-notebook 内核 `nlp3`。
+### 0.3 运行环境与依赖
 
-### 0.3 样本期
+**解释器**：`/home/zan1/envs/nlp3/bin/python`（Python 3.11），notebook 内核 `nlp3`。
+
+| 包 | 版本 | 用途 |
+|---|---|---|
+| `pandas` | 2.2.3 | 全流程的数据处理；`merge_asof` 做时点对齐、`rolling` 做滚动窗口统计 |
+| `numpy` | 1.26.4 | CAR 的累积对数收益、分位断点、手写 OLS 的矩阵运算 |
+| `pyarrow` | 23.0.0 | parquet 读写；`iter_batches` 流式扫描 16 GB 的 O2O 面板，避免整表进内存 |
+| **`pyfixest`** | **0.60.0** | **回归估计**。Python 版的 Stata `reghdfe` / R `fixest`：多维固定效应交替投影吸收 + 聚类稳健标准误。见 §4 与 `回归准备.ipynb` §B.1 |
+| `matplotlib` | 3.10.8 | PEAD 事件时间图（两张） |
+| `scipy` | 1.17.0 | `pyfixest` 的依赖；本项目代码不直接调用（t 检验用 numpy 手算） |
+
+**为什么回归要用 `pyfixest` 而不是 `statsmodels`**：公司固定效应有 11,091 个水平，
+`statsmodels` 需要显式构造 302,054 × 11,000 的哑变量矩阵（约 26 GB）。
+`pyfixest` 用交替投影把固定效应吸收掉，矩阵只剩 302,054 × 11。
+自由度与聚类口径与 `reghdfe` 一致，`回归准备.ipynb` §B.5 用一份独立的手写实现
+（numpy 直接做 FWL 去均值 + 聚类方差）交叉验证过，最大系数偏差 6e-07。
+
+安装：`pip install pyfixest`（其余包环境里已有）。
+
+### 0.4 样本期
 
 **样本期：1996-01-02 ~ 2026-05-14**
 
@@ -192,7 +210,7 @@ CAR 是在不足 60 天上算出来的，与其他事件不可比。
 ⚠️ **1995 年的 5,628 个公告已剔除**：它们早于交易日历起点，`td0` 会被强行落到日历首日
 （1996-01-02），CAR 窗口与公告相隔数月，纯属噪音。见 §6.10。
 
-### 0.4 数据流
+### 0.5 数据流
 
 ```
 WRDS 11 张表 ──┐

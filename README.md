@@ -228,6 +228,45 @@ I/B/E/S detail ───────────────┼─→ Step 5  SU
                                                                  → Step 8 数据字典
 ```
 
+### 0.6 `build/` 产物清单
+
+16 个 parquet + 2 个 csv + 2 张图。除最终大表外，其余都是各步的中间产物 ——
+独立存盘是为了**改某一个变量的定义时只需重跑对应步骤**，不必全量重建。
+
+| 文件 | 由哪步产生 | 行数 | 粒度（主键） | 内容 |
+|---|---|---|---|---|
+| `universe.parquet` | Step 1 | 193,968 | permno × 信息区间 | 股票池：交易所、SIC、CUSIP，以及 `is_common`/`is_us`/`in_universe`/`is_nyse` 等筛选布尔列 |
+| `link_ccm.parquet` | Step 1 | 33,324 | gvkey × 链接区间 | PERMNO ↔ GVKEY，含 `linkdt`/`linkenddt` 有效期 |
+| `link_ibes.parquet` | Step 1 | 30,080 | ticker × 链接区间 | I/B/E/S ticker ↔ PERMNO，含 `sdate`/`edate` |
+| `port25_membership.parquet` | Step 2 | 135,230 | permno × formation 年 | 25 组成员表：`me_june`/`me_dec`/`be`/`bm_raw`/`size_q`/`bm_q`/`port25` |
+| `port25_bench_returns.parquet` | Step 2 | 191,825 | 交易日 × port25 | **基准组合日收益**：`bench_ret_c2c`/`bench_ret_o2o` 及各自成员数（7,673 天 × 25 组） |
+| `events.parquet` | Step 3 | 517,955 | permno × 公告日 × 财季 | 事件表：`anndats`/`td0`/`td0_idx`/`pends`/`actual_eps`/`lag` 及各类标记列 |
+| `car.parquet` | Step 4 | 517,955 | eid | 四个 CAR 及其分项：`stk_*`（个股）、`bench_*`（基准）、`n_days_*`（窗口天数）、`port25` |
+| `sue.parquet` | Step 5 | 517,955 | eid | `sue`/`sue_dec`/`consensus_f`/`price_adj`/`prc_unadj`/`n_analyst_sue`/`flag_sue_dropped` |
+| `ctrl_size.parquet` | Step 6 | 250,874 | permno × 年 | `me_jan`（年初市值）、`size_dec` |
+| `ctrl_bm.parquet` | Step 6 | 135,230 | permno × formation 年 | `be`、`bm_raw`、`bm_dec` |
+| `ctrl_turn.parquet` | Step 6 | 2,871,577 | permno × 月 | `turn`（过去 12 个月月均换手率） |
+| `ctrl_io.parquet` | Step 6 | 889,973 | permno × 13F 报告期 | `io`（机构持股比例） |
+| `ctrl_evol_epersist.parquet` | Step 6 | 698,171 | permno × 财季 | `evol`、`epersist` |
+| `ctrl_lnanalyst.parquet` | Step 6 | 443,648 | eid | `n_analyst_cover`（公告前 365 天覆盖分析师数） |
+| **`pead_panel.parquet`** | **Step 7** | **517,955** | **eid** | **最终大表，72 列**，上述全部合并 + LAG 高阶项 + 日历键。列字典见 §5 |
+| `car_path.parquet` | `build_car_path.py` | 2,440 | 口径 × 十分位 × 事件日 | 事件时间路径：`conv`/`sue_dec`/`event_day`（−60…+61）/`car`/`n`，两张 PEAD 图的数据源 |
+
+**非 parquet 产物**
+
+| 文件 | 由哪步产生 | 内容 |
+|---|---|---|
+| `data_dictionary.csv` | Step 8 | 大表 72 列的列名 / dtype / 覆盖率 / 中位数 / 说明（机读版） |
+| `baseline_results.csv` | `回归准备.ipynb` §E | 8 条 baseline 回归的 β₁ / 标准误 / 两种聚类的 t 值 / N / within R² |
+| `pead_paths.png` | `回归准备.ipynb` §A.3 | 公告后 [0,61] 的十分位累计 CAR 曲线（C2C + O2O） |
+| `pead_paths_full.png` | `回归准备.ipynb` §A.3 | 仿 BT (1989) fig.2：公告前后分两段各自从 0 起算 |
+
+**`eid`** 是事件唯一编号（= `events.parquet` 的行号），`car` / `sue` / `ctrl_lnanalyst` 都用它对齐，
+可以据此回溯任何一个事件在各中间表里的原始值。
+
+**注意**：`build/*.parquet` 未纳入版本库（`.gitignore`），因为可由代码完全重建；
+`build/*.csv` 与 `build/*.png` 体积小且是结果，已提交。
+
 ---
 
 ## 1. 术语与缩写

@@ -51,6 +51,9 @@ sue,Float64,66.4%,0.0005017,★ SUE (Standardized Unexpected Earnings) 标准化
 sue_dec,float64,66.4%,5,★ SUE decile 十分位（按公告日所在日历季度独立分组，1=最负意外，10=最正）
 flag_sue_dropped,boolean,71.0%,,被 SUE 清洗规则剔除（股价<$1 或 |e|/|F| 超过股价）
 n_analyst_cover,float64,85.7%,6,上述分析师数的原始计数
+n_ann_day,float64,99.7%,253,◆ 公告当日全市场的季报公告家数（计数池 = 全部 Compustat 季报的 rdq，I/B/E/S 日期更早时取更早的）
+nrank,float64,99.7%,5,◆ NRANK：同日公告数在**日历季度内**的十分位，1 = 当日公告最少，10 = 最多（最分心），HLT 2009 的 distraction 度量
+att,float64,99.7%,6,◆ ATT (Attention) = 11 − NRANK，1–10，数值越大注意力越充裕
 lnanalyst,float64,100.0%,1.792,◆ LNANALYST (Log of 1 + Number of Analysts) = log(1 + 公告前 365 天内出过预测的不同分析师数)
 me_jun,Float64,96.6%,3.759e+05,ME (Market Equity) formation 年 6 月末市值，千美元（SIZE 十分位的排序变量，HLT §III.A）
 size_dec,float64,96.6%,2,◆ SIZE (Firm Size decile) 规模十分位：年初（上年12月末）市值，用 NYSE 股票算断点

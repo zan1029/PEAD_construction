@@ -185,7 +185,7 @@ $SUE$ 在回归里始终是 **`sue_rank` = (十分位 − 1)/9 ∈ [0,1]**，不
 
 ---
 
-**最终产出**：`build/pead_panel.parquet` — 事件级大表，517,955 行 × 72 列
+**最终产出**：`build/pead_panel.parquet` — 事件级大表，517,955 行 × 75 列
 **目录**：`/project/dachxiu/zan/PEAD/`
 
 ---
@@ -212,6 +212,7 @@ yifei 的 16 GB O2O 面板，跑一次就够，没必要每次执行 notebook �
 | `export_returns.py` | 生产 | 合成 C2C + O2O 日收益面板（跑一次） |
 | `数据准备.ipynb` | 生产 | 8 步流水线，从原始数据到大表 |
 | `回归准备.ipynb` | 生产 | 组合排序 + 事件时间图 + baseline 回归（论文格式表） |
+| `回归结果补充.ipynb` | 生产 | 按 channel 组织的回归：ADOPT（GenAI 采用）、ATT（注意力），后续接 LLM signal |
 | `build_car_path.py` | 生产 | 事件时间 CAR 路径（343,609 事件 × 122 天 × 2 口径 × 2 种分位，约 20 分钟） |
 | `verify_readme.py` | 工具 | 逐条核对本文档引用的数字与实际产物是否一致（84 项，含回归结果）
 | `audit_panel.py` | 工具 | 审计大表的内部逻辑：恒等式、前视偏差、取值域、重复（35 项） |
@@ -296,7 +297,7 @@ I/B/E/S detail ───────────────┼─→ Step 5  SU
 
 ### 0.6 `build/` 产物清单
 
-16 个 parquet + 2 个 csv + 2 张图。除最终大表外，其余都是各步的中间产物 ——
+17 个 parquet + 2 个 csv + 4 张图。除最终大表外，其余都是各步的中间产物 ——
 独立存盘是为了**改某一个变量的定义时只需重跑对应步骤**，不必全量重建。
 
 | 文件 | 由哪步产生 | 行数 | 粒度（主键） | 内容 |
@@ -315,14 +316,15 @@ I/B/E/S detail ───────────────┼─→ Step 5  SU
 | `ctrl_io.parquet` | Step 6 | 889,973 | permno × 13F 报告期 | `io`（机构持股比例） |
 | `ctrl_evol_epersist.parquet` | Step 6 | 698,171 | permno × 财季 | `evol`、`epersist` |
 | `ctrl_lnanalyst.parquet` | Step 6 | 443,648 | eid | `n_analyst_cover`（公告前 365 天覆盖分析师数） |
-| **`pead_panel.parquet`** | **Step 7** | **517,955** | **eid** | **最终大表，72 列**，上述全部合并 + LAG 高阶项 + 日历键。列字典见 §5 |
+| `ctrl_att.parquet` | Step 6.2 | 517,955 | eid | `n_ann_day`（同日全市场公告家数）、`nrank`（季度内十分位）、`att` = 11 − NRANK |
+| **`pead_panel.parquet`** | **Step 7** | **517,955** | **eid** | **最终大表，75 列**，上述全部合并 + LAG 高阶项 + 日历键。列字典见 §5 |
 | `car_path.parquet` | `build_car_path.py` | 4,880 | 分位口径 × 收益口径 × 十分位 × 事件日 | 事件时间路径：`grouping`（`current` 当季断点 / `prior` 上季断点）/`conv`/`sue_dec`/`event_day`（−60…+61）/`car`/`n`，三张 PEAD 图的数据源 |
 
 **非 parquet 产物**
 
 | 文件 | 由哪步产生 | 内容 |
 |---|---|---|
-| `data_dictionary.csv` | Step 8 | 大表 72 列的列名 / dtype / 覆盖率 / 中位数 / 说明（机读版） |
+| `data_dictionary.csv` | Step 8 | 大表 75 列的列名 / dtype / 覆盖率 / 中位数 / 说明（机读版） |
 | `baseline_results.csv` | `回归准备.ipynb` §E | 8 条 baseline 回归的 β₁ / 标准误 / 两种聚类的 t 值 / N / within R² |
 | `pead_paths.png` | `回归准备.ipynb` §A.3 | 公告后 [0,61] 的十分位累计 CAR 曲线（C2C + O2O） |
 | `pead_paths_full.png` | `回归准备.ipynb` §A.3 | 仿 BT (1989) fig.2：公告前后分两段各自从 0 起算 |
@@ -713,6 +715,7 @@ $$SUE_{i,d}=\frac{e_{i,d}-F_{i,d}}{P_{i,d}}$$
 | `ctrl_io.parquet` | 889,973 | firm×quarter | `Σshares/(shrout×1000)`，同 (mgrno,cusip,rdate) 多次申报取最新 `fdate` |
 | `ctrl_evol_epersist.parquet` | 698,171 | firm×quarter | 见下 |
 | `ctrl_lnanalyst.parquet` | 443,648 | firm×event | 公告前 365 天内不同 `analys` 计数 |
+| `ctrl_att.parquet` | 517,955 | firm×event | 同日公告数 → 季度内十分位 NRANK → ATT = 11 − NRANK |
 
 **EVOL（Earnings Volatility，盈余波动率）与 EPERSIST（Earnings Persistence，盈余持续性）的构造**
 
@@ -771,7 +774,7 @@ EPERSIST 用水平值，量的是"盈余水平有多黏"。季度 EPS 本身有�
 
 ### Step 7 — 合并成大表
 
-**输出**：`pead_panel.parquet` — **517,955 行 × 72 列**
+**输出**：`pead_panel.parquet` — **517,955 行 × 75 列**
 
 `IO` / `EVOL` / `EPERSIST` 是季度数据，用 `merge_asof(direction='backward')` 取公告前最近一期，
 并记录陈旧程度：`io_stale_days > 200 天`、`eps_stale_days > 400 天` 则置为缺失 ——
@@ -795,12 +798,12 @@ EPERSIST 用水平值，量的是"盈余水平有多黏"。季度 EPS 本身有�
 
 ### Step 8 — 数据字典
 
-**输出**：`build/data_dictionary.csv` —— 72 列的列名 / dtype / 覆盖率 / 中位数 / 说明。
+**输出**：`build/data_dictionary.csv` —— 75 列的列名 / dtype / 覆盖率 / 中位数 / 说明。
 带 `⚠️ 未登记` 检查：新增列若忘记写说明会被标出。
 
 ---
 
-## 5. 大表列字典（72 列）
+## 5. 大表列字典（75 列）
 
 > 机读版见 `build/data_dictionary.csv`。★ = 回归主变量，◆ = 控制变量。
 

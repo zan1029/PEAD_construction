@@ -17,7 +17,7 @@ def chk(label, actual, claimed, tol=0):
 
 # --- 目录 ---
 chk("data/ parquet 数", len(glob.glob("data/*.parquet")), 102)
-chk("build/ parquet 数", len(glob.glob("build/*.parquet")), 16)
+chk("build/ parquet 数", len(glob.glob("build/*.parquet")), 17)
 chk("export/ parquet 数", len(glob.glob("export/*.parquet")), 1)
 
 # --- 原始数据行数 ---
@@ -84,7 +84,7 @@ chk("sue_dec 错配", int((sue["sue_dec"].notna() & sue["sue"].isna()).sum()), 0
 # --- Step 7 大表 ---
 panel = pd.read_parquet("build/pead_panel.parquet")
 chk("panel 行数", len(panel), 517955)
-chk("panel 列数", panel.shape[1], 72)
+chk("panel 列数", panel.shape[1], 75)
 for c, v in [("size_dec", 96.6), ("bm_dec", 88.8), ("lnanalyst", 100.0), ("lag", 100.0),
              ("io", 96.9), ("evol", 93.9), ("epersist", 93.9), ("turn", 96.9)]:
     chk(f"{c} 覆盖率%", round(100 * panel[c].notna().mean(), 1), v, tol=0.05)
@@ -141,7 +141,7 @@ chk("回归样本量 N", int(reg.loc[("ANN", "C2C"), "N"]), 302274)
 
 # --- 数据字典 ---
 dd = pd.read_csv("build/data_dictionary.csv")
-chk("字典行数", len(dd), 72)
+chk("字典行数", len(dd), 75)
 chk("字典未登记列", int(dd["说明"].astype(str).str.startswith("⚠️").sum()), 0)
 
 print(f"通过 {len(OK)} 项")

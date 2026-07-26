@@ -147,7 +147,7 @@ yifei 的 16 GB O2O 面板，跑一次就够，没必要每次执行 notebook �
 | `数据准备.ipynb` | 生产 | 8 步流水线，从原始数据到大表 |
 | `回归准备.ipynb` | 生产 | 组合排序 + 事件时间图 + baseline 回归（论文格式表） |
 | `build_car_path.py` | 生产 | 事件时间 CAR 路径（344k 事件 × 62 天 × 2 口径，约 8 分钟） |
-| `verify_readme.py` | 工具 | 逐条核对本文档引用的数字与实际产物是否一致
+| `verify_readme.py` | 工具 | 逐条核对本文档引用的数字与实际产物是否一致（84 项，含回归结果）
 | `audit_panel.py` | 工具 | 审计大表的内部逻辑：恒等式、前视偏差、取值域、重复（35 项） |
 | `数据view.ipynb` | 草稿 | 临时查看数据用 |
 | `export_run.log` | 日志 | `export_returns.py` 的运行记录 |
@@ -872,7 +872,9 @@ jupyter nbconvert --to notebook --execute --inplace \
 python verify_readme.py
 ```
 
-逐条比对本文档引用的 75 个数字与实际产物，输出不一致项。数据重跑后跑一次即可确认文档没过期。
+逐条比对本文档引用的 **84 个数字**与实际产物（原始数据行数、各步产出、CAR/SUE 分布、控制变量覆盖率、
+PEAD 十分位与 t 值、baseline 回归的 β₁/t/N、数据字典完整性），输出不一致项。
+数据或回归重跑后跑一次即可确认文档没过期。
 
 ---
 

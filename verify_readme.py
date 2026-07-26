@@ -110,6 +110,16 @@ for c, t in [("car_ann_c2c", 82.6), ("car_drift_c2c", 14.5), ("car_ann_o2o", 86.
     chk(f"{c} t值", round(float(welch(chk_p.loc[chk_p["sue_dec"] == 10, c], chk_p.loc[chk_p["sue_dec"] == 1, c])), 1),
         t, tol=0.05)
 
+
+# --- Baseline 回归结果（README「主要结果」一节） ---
+reg = pd.read_csv("build/baseline_results.csv")
+reg = reg[reg["spec"] == "(0a) no interactions"].set_index(["window", "returns"])
+for (w, c), b, t in [(("ANN", "C2C"), 0.0796, 100.5), (("DRIFT", "C2C"), 0.0193, 13.6),
+                     (("ANN", "O2O"), 0.0726, 98.4), (("DRIFT", "O2O"), 0.0298, 20.3)]:
+    chk(f"回归 β₁ {w} {c}", round(float(reg.loc[(w, c), "beta_SUE"]), 4), b, tol=5e-5)
+    chk(f"回归 t  {w} {c}", round(float(reg.loc[(w, c), "t_firm"]), 1), t, tol=0.05)
+chk("回归样本量 N", int(reg.loc[("ANN", "C2C"), "N"]), 301383)
+
 # --- 数据字典 ---
 dd = pd.read_csv("build/data_dictionary.csv")
 chk("字典行数", len(dd), 72)

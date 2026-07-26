@@ -4,6 +4,8 @@ data/
 # 大体积中间产物（可由代码重建）
 export/
 build/*.parquet
+# 逐事件路径缓存 280 MB，由 build_car_path.py 重建
+build/*.npz
 
 # 杂项
 *.log

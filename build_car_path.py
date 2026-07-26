@@ -4,7 +4,13 @@
 与 HLT2009 的截面回归互为补充。
 
 窗口 [-60, +61]，基线为第 -61 个交易日，因此曲线从 0 出发。
-输出 build/car_path.parquet: sue_dec × event_day × 口径 的平均 CAR。
+
+两套分组同时产出（列 `grouping`）：
+  current —— 当季截面分位（主设定，HLT2009 把 SUE 分位当控制变量的做法）
+  prior   —— 上一季度截面分布定断点、当季 SUE 值对号入座（FOS1984/BT1989 的可实施版本）
+
+输出 build/car_path.parquet: grouping × 口径 × sue_dec × event_day 的平均 CAR，
+     build/car_path_events.npz: 逐事件路径矩阵（便于以后换分组重算，无需重扫收益）。
 """
 import glob
 
@@ -27,12 +33,32 @@ NDAY = len(cal)
 
 # 事件（有 SUE 十分位的）
 p = pd.read_parquet(f"{BUILD}/pead_panel.parquet",
-                    columns=["eid", "permno", "anndats", "td0_idx", "port25", "sue_dec",
+                    columns=["eid", "permno", "anndats", "td0_idx", "port25", "sue", "sue_dec",
                              "is_latest_pends_on_day", "flag_lag_bad"])
-ev = p[p["sue_dec"].notna()].copy()
+# 与回归准备.ipynb 的 sort_sample 同口径：有 SUE 十分位 + 同日多季报只留最新一季
+ev = p[p["sue_dec"].notna() & p["is_latest_pends_on_day"]].copy()
 ev["permno"] = ev["permno"].astype("int64")
 ev["year"] = ev["anndats"].dt.year
-print(f"事件 {len(ev):,} | 十分位 {ev['sue_dec'].min():.0f}-{ev['sue_dec'].max():.0f}", flush=True)
+
+# FOS 分组：断点取自上一日历季度的 SUE 分布，当季的 SUE 值对号入座。
+# 1996 年的事件用得上 1995Q3/Q4 的 SUE —— I/B/E/S 从 1995 年起有数据，那些事件本身
+# 因为日历不完整没有 CAR、不进图，但完全可以拿来当断点，所以 1996Q1 也有上季分位。
+ev["qtr"] = ev["anndats"].dt.to_period("Q")
+qs = sorted(ev["qtr"].unique())
+MIN_Q = 100                                      # 断点至少要有这么多观测才可信
+bp = {q: (np.nanpercentile(v, np.arange(10, 100, 10)) if len(v) >= MIN_Q else None)
+      for q in qs for v in [ev.loc[ev["qtr"] == q, "sue"].dropna().to_numpy()]}
+ev["sue_dec_prior"] = np.nan
+for i, q in enumerate(qs):
+    cuts = bp[qs[i - 1]] if i > 0 else None
+    if cuts is None:                             # 上一季不存在或样本太少
+        continue
+    m = (ev["qtr"] == q).to_numpy()
+    ev.loc[m, "sue_dec_prior"] = np.searchsorted(cuts, ev.loc[m, "sue"].to_numpy(),
+                                                 side="right") + 1
+ev.loc[ev["sue"].isna(), "sue_dec_prior"] = np.nan
+print(f"事件 {len(ev):,} | 当季分位 {ev['sue_dec'].min():.0f}-{ev['sue_dec'].max():.0f}"
+      f" | 上季分位可得 {ev['sue_dec_prior'].notna().sum():,}", flush=True)
 
 # 基准组合的累积对数收益矩阵（26 × NDAY）
 bench = pd.read_parquet(f"{BUILD}/port25_bench_returns.parquet")
@@ -77,7 +103,7 @@ def year_returns(tag, y0, y1):
     return pd.concat(parts, ignore_index=True) if parts else None
 
 
-out = []
+out, RAW = [], {}
 for tag in ["c2c", "o2o"]:
     paths = np.full((len(ev), KMAX - KMIN + 1), np.nan, dtype="float32")
     pos_of_eid = {e: i for i, e in enumerate(ev["eid"].to_numpy())}
@@ -85,7 +111,9 @@ for tag in ["c2c", "o2o"]:
         sub = ev[ev["year"] == y]
         if sub.empty:
             continue
-        r = year_returns(tag, y, y + 1)
+        # 前扩一年：公告前 60 天的基线（td0-61）对 1、2 月的公告会落到上一年，
+        # 只载入 [y, y+1] 会把这些事件整条丢弃（1-2 月是 Q4 财报公告高峰，损失约 24%）
+        r = year_returns(tag, y - 1, y + 1)
         if r is None or r.empty:
             continue
         r["permno"] = r["permno"].astype("int64")
@@ -122,18 +150,26 @@ for tag in ["c2c", "o2o"]:
             paths[idxs[valid], j] = (stk - bch).astype("float32")
         print(f"  {tag} {y}: {valid.sum():,}", flush=True)
 
+    RAW[tag] = paths
     df = pd.DataFrame(paths, columns=[f"k{k}" for k in range(KMIN, KMAX + 1)])
-    df["sue_dec"] = ev["sue_dec"].to_numpy()
-    g = df.groupby("sue_dec").mean().stack().reset_index()
-    g.columns = ["sue_dec", "k", "car"]
-    g["event_day"] = g["k"].str[1:].astype(int)
-    g["conv"] = tag.upper()
-    n = df.groupby("sue_dec")["k0"].count().rename("n").reset_index()
-    out.append(g.merge(n, on="sue_dec")[["conv", "sue_dec", "event_day", "car", "n"]])
+    for grouping, dec_col in [("current", "sue_dec"), ("prior", "sue_dec_prior")]:
+        df["_dec"] = ev[dec_col].to_numpy()
+        g = df.groupby("_dec")[[f"k{k}" for k in range(KMIN, KMAX + 1)]].mean().stack().reset_index()
+        g.columns = ["sue_dec", "k", "car"]
+        g["event_day"] = g["k"].str[1:].astype(int)
+        g["conv"] = tag.upper()
+        g["grouping"] = grouping
+        n = df.groupby("_dec")["k0"].count().rename("n").reset_index().rename(columns={"_dec": "sue_dec"})
+        out.append(g.merge(n, on="sue_dec")[["grouping", "conv", "sue_dec", "event_day", "car", "n"]])
+    df.drop(columns="_dec", inplace=True)
 
 res = pd.concat(out, ignore_index=True)
 res.to_parquet(f"{BUILD}/car_path.parquet", index=False)
+np.savez_compressed(f"{BUILD}/car_path_events.npz", eid=ev["eid"].to_numpy(),
+                    sue_dec=ev["sue_dec"].to_numpy(), sue_dec_prior=ev["sue_dec_prior"].to_numpy(),
+                    kmin=KMIN, kmax=KMAX, **{t: RAW[t] for t in RAW})
 print(f"\\n→ {BUILD}/car_path.parquet  {len(res):,} 行")
+res = res[res["grouping"] == "current"]
 piv = res[res["conv"] == "C2C"].pivot(index="event_day", columns="sue_dec", values="car")
 print("\\nC2C 各十分位的累计异常收益 (%)：")
 print((piv.loc[[0, 5, 20, 40, 61]] * 100).round(2).to_string())

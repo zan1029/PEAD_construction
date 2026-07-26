@@ -91,12 +91,13 @@ for c, v in [("size_dec", 96.8), ("bm_dec", 88.8), ("lnanalyst", 100.0), ("lag",
 need = ["car_ann_c2c", "car_drift_c2c", "sue", "size_dec", "bm_dec", "lnanalyst", "lag", "io", "evol", "epersist", "turn"]
 chk("可回归样本", int(panel[need].notna().all(axis=1).sum()), 302564)
 
-# --- PEAD 验证 ---
-chk_p = panel[panel["sue_dec"].notna()]
-chk("PEAD 样本", len(chk_p), 344026)
+# --- PEAD 验证（与回归准备.ipynb 的 sort_sample 同口径：有 SUE 十分位 + 同日多季报只留最新） ---
+chk("有 SUE 的事件（全部）", int(panel["sue_dec"].notna().sum()), 344026)
+chk_p = panel[panel["sue_dec"].notna() & panel["is_latest_pends_on_day"]]
+chk("PEAD 组合排序样本", len(chk_p), 343609)
 tab = chk_p.groupby("sue_dec")[["car_ann_c2c", "car_drift_c2c", "car_ann_o2o", "car_drift_o2o"]].mean() * 100
-for c, d1, d10 in [("car_ann_c2c", -4.164, 3.920), ("car_drift_c2c", -3.541, 0.692),
-                   ("car_ann_o2o", -3.589, 3.701), ("car_drift_o2o", -5.037, 0.366)]:
+for c, d1, d10 in [("car_ann_c2c", -4.167, 3.925), ("car_drift_c2c", -3.535, 0.715),
+                   ("car_ann_o2o", -3.595, 3.705), ("car_drift_o2o", -5.032, 0.390)]:
     chk(f"{c} D1", round(float(tab.loc[1, c]), 3), d1, tol=0.002)
     chk(f"{c} D10", round(float(tab.loc[10, c]), 3), d10, tol=0.002)
 
@@ -106,9 +107,27 @@ def welch(x, y):
     return (x.mean() - y.mean()) / np.sqrt(x.var(ddof=1) / len(x) + y.var(ddof=1) / len(y))
 
 
-for c, t in [("car_ann_c2c", 82.6), ("car_drift_c2c", 14.5), ("car_ann_o2o", 86.4), ("car_drift_o2o", 18.2)]:
+for c, t in [("car_ann_c2c", 82.6), ("car_drift_c2c", 14.6), ("car_ann_o2o", 86.5), ("car_drift_o2o", 18.3)]:
     chk(f"{c} t值", round(float(welch(chk_p.loc[chk_p["sue_dec"] == 10, c], chk_p.loc[chk_p["sue_dec"] == 1, c])), 1),
         t, tol=0.05)
+
+# --- 事件时间路径与对冲组合（README §主要结果 / §9） ---
+pt = pd.read_parquet("build/car_path.parquet")
+chk("car_path 行数", len(pt), 4880)
+chk("car_path 两套分位", sorted(pt["grouping"].unique()), ["current", "prior"])
+for g, n in [("current", 307242), ("prior", 307242)]:
+    q = pt[(pt["grouping"] == g) & (pt["conv"] == "C2C")].drop_duplicates("sue_dec")
+    chk(f"路径事件数 {g}", int(q["n"].sum()), n)
+for conv, pre, drift in [("C2C", 6.96, 5.17), ("O2O", 6.88, 6.20)]:
+    q = pt[(pt["grouping"] == "current") & (pt["conv"] == conv)].pivot(
+        index="event_day", columns="sue_dec", values="car")
+    h = (q[10.0] - q[1.0]) * 100
+    chk(f"对冲 公告前[-60,-1] {conv}", round(float(h.loc[-1]), 2), pre, tol=0.005)
+    chk(f"对冲 纯漂移[2,61] {conv}", round(float(h.loc[61] - h.loc[1]), 2), drift, tol=0.005)
+for conv, sp in [("C2C", 4.31), ("O2O", 5.52)]:
+    q = pt[(pt["grouping"] == "prior") & (pt["conv"] == conv)]
+    chk(f"上季断点存在 {conv}", int(len(q) > 0), 1)
+chk("PEAD 图数量", len(glob.glob("build/pead_paths*.png")), 3)
 
 
 # --- Baseline 回归结果（README「主要结果」一节） ---

@@ -1017,18 +1017,42 @@ PEAD 十分位与 t 值、baseline 回归的 β₁/t/N、数据字典完整性�
 | 部分 | 内容 | 产出 |
 |---|---|---|
 | A | 组合排序（BT 1989 方法）：十分位表、事件时间路径（公告后 / 公告前后分段两张图）、对冲组合、上季断点（FOS）补充面板 + 对照图 | `build/car_path.parquet`, `build/pead_paths.png`, `build/pead_paths_full.png`, `build/pead_paths_breakpoints.png` |
-| B | 截面回归 (0a) `SUE + controls`，两窗口 × 两口径（`pyfixest`，公司/年/月/星期/行业 FE） | `build/baseline_results.csv` |
+| B | 截面回归 (0a) `SUE + controls`，两窗口 × 两口径 | `build/baseline_results.csv` |
 | C | 截面回归 (0b) 加 `X × SUE` 交互项 | 同上 |
+| B.5 | 交叉验证：`pyfixest` 与独立手写实现（numpy 做 FWL 去均值 + 聚类方差）逐系数比对 | — |
+| B.6 | 论文刻度复制：FE 用 1–10 整数、CAR 用百分点，与原文 1.028 / 0.979 直接对照 | — |
 | D | 稳健性：连续 SUE / 2000 年后 / 剔除微盘股 / 只保留满窗事件 | — |
-| B.5 | 交叉验证：`pyfixest` 与独立手写实现（numpy 做 FWL 去均值 + 聚类方差）逐系数比对 | 最大偏差 6e-07 |
 
 **核心结果**：对冲组合（D10−D1，事件时间路径口径）在公告前 60 天已累计 +6.96%（C2C），
 公告窗口 [0,1] 再得 +8.03%，公告后的**纯漂移 [2,61] 为 +5.17%（C2C）/ +6.20%（O2O）**，
 对照 BT 1989 的 6.31%。十分位表（窗口端点口径）给出的纯漂移是 +4.25% / +5.42%，
 两者的差异来自样本：路径要求 [−60,+61] 整段可得，比十分位表少约 12% 的事件。
-回归中 DRIFT 的 β₁ 在控制公司/行业/日历固定效应与 10 个控制变量后仍显著为正。
+回归中 DRIFT 的 β₁ 在控制行业/日历固定效应与 10 个控制变量后仍显著为正。
+
+### 已完成：Channel 回归（`回归结果补充.ipynb`）
+
+两个 moderator 各自先跑不含 LLM signal 的基本回归，设定与 baseline 完全相同，
+并按 HLT 2009 eq. (4) 加入控制变量 × SUE 的交互。
+
+| 节 | Channel | Moderator | 结果 |
+|---|---|---|---|
+| §2 | **ADOPT** | `ADOPT` = 1{公告日 ≥ 2022-11-30}（ChatGPT 发布） | `SUE × ADOPT` 在 ANN 显著为正（+0.0096\*\*\* C2C / +0.0092\*\*\* O2O），DRIFT 为负但不显著 |
+| §3 | **ATT** | `ATT` = 11 − NRANK，NRANK 为同日公告数的季度内十分位 | `SUE × ATT` 在 ANN 两口径均 1% 显著为正，DRIFT 为负、O2O 边际显著 |
+
+**ADOPT 的分段斜率**（Table A3，直接估两段而非只看交互项）：公告窗口从 0.0803 升到 0.0899
+（+12%，C2C），漂移窗口 0.0237 → 0.0232，**post 期仍显著为正**。
+所以结论是"没有证据显示漂移变小"，而非"漂移消失"。ADOPT 是纯日历断点，
+同期发生的其他变化都与它共线，单独用无法把功劳归给 GenAI。
+
+**ATT 与原文的对照**（`回归结果补充.ipynb` §3.3，与原文同刻度同设定）：
+`FE × NRANK` 在 CAR[0,1] 是 −0.0205\*\*\*（原文 −0.015），公告窗口完全复制；
+CAR[2,61] 是 +0.0089（原文 +0.049），方向一致、量级约五分之一 ——
+PEAD 本身在 2000 年后大幅衰减，作用在漂移上的调节效应随之缩小。
 
 **尚未完成**
-- **Moderator**：`ATT`（注意力）、`ADOPT`（AI 采用）、`OUT`（AI 停机）
-- **LLM signal**：现有 `LLAMA3_8B` 预测覆盖 2004–2019（新闻语料止于 2019），
-  而 `ADOPT` 断点在 2022-11-30 —— **Channel 2/3 需要 2020 年后的新闻语料才能做**
+- **LLM signal**：新闻级预测在
+  `/project/dachxiu/yifei/news/experiment/US/ARTICLE/RidgeProximal/QUESTION_CHOICE_pred_1d_...`，
+  逐年一个 `pred_YYYY.pkl`，覆盖 2004-01 至 2026-03。需要按 firm-day 聚合后并到事件窗口，
+  先做 $[d,\ d+1]$ 与 $[d-1,\ d+1]$ 两个窗口
+- **Moderator `OUT`**（AI 停机）：尚未构造
+- **核心检验** $\beta_5$（$M \times LLM$）：待 LLM signal 接入后

@@ -101,12 +101,15 @@ $$CAR^w_{i,d}=\alpha+\beta_1 SUE_{i,d}+\sum_k\gamma_k X_{k,i,d}+\sum_k\delta_k\l
 
 对照 BT (1989) 报告的 60 日对冲收益 6.31%（1974–1986 样本），方向一致、量级同级。
 
-**截面回归**（设定 0a，$\beta_1$）：
+**截面回归**（设定 0a，$\beta_1$，N = 301,383）：
 
 | 窗口 | C2C | O2O |
 |---|---|---|
-| ANN | 0.0796 (t = 100) | 0.0726 (t = 98) |
+| ANN | 0.0796 (t = 100.5) | 0.0726 (t = 98.4) |
 | **DRIFT** | **0.0193 (t = 13.6)** | **0.0298 (t = 20.3)** |
+
+估计用 `pyfixest`（Python 版 `reghdfe`），标准误按公司聚类；按公告日聚类的 t 值分别为
+119.5 / 13.1（C2C）与 126.8 / 19.5（O2O），结论不依赖聚类方式。
 
 加入公司/行业/日历固定效应与 10 个控制变量后，DRIFT 的系数依然显著为正 ——
 **PEAD 在 1996–2026 的样本上成功复制**。
@@ -149,7 +152,8 @@ yifei 的 16 GB O2O 面板，跑一次就够，没必要每次执行 notebook �
 | `数据view.ipynb` | 草稿 | 临时查看数据用 |
 | `export_run.log` | 日志 | `export_returns.py` 的运行记录 |
 
-**运行环境**：`/home/zan1/envs/nlp3/bin/python`（Python 3.11 + pandas 2.2.3），notebook 内核 `nlp3`。
+**运行环境**：`/home/zan1/envs/nlp3/bin/python`（Python 3.11 + pandas 2.2.3 + pyfixest 0.60），
+notebook 内核 `nlp3`。
 
 ### 0.3 样本期
 
@@ -812,7 +816,13 @@ O2O 版在最小市值五分位偏差更大（组合年化差 +2.7 ~ +5.8pp）�
 修复：`flag_pre_calendar = anndats < 交易日历起点`，这些事件的 CAR / stk / bench 列全部置空。
 样本起点因此明确为 **1996-01-02**，与新闻语料起点一致。
 
-### 6.10 内存
+### 6.10 pyfixest 会剔除 singleton 观测
+
+`pf.feols` 默认丢弃固定效应中只有单个观测的组（singleton）—— 只出现过一次公告的公司
+在吸收公司固定效应后残差恒为 0，既不贡献识别信息又会虚增自由度，这是 `reghdfe` 的标准行为。
+本项目因此从 302,054 降到 **301,383** 个观测（少 671 个），属预期内。
+
+### 6.11 内存
 
 login node 内存吃紧，三处必须流式处理：CAR 的日收益累积、13F 的 1.14 亿行聚合、
 交易日历构建（逐文件先 `drop_duplicates` 再合并）。
@@ -873,9 +883,10 @@ python verify_readme.py
 | 部分 | 内容 | 产出 |
 |---|---|---|
 | A | 组合排序（BT 1989 方法）：十分位表、事件时间路径（公告后 / 公告前后分段两张图）、对冲组合、实时分位稳健性 | `build/car_path.parquet`, `build/pead_paths.png`, `build/pead_paths_full.png` |
-| B | 截面回归 (0a) `SUE + controls`，两窗口 × 两口径 | `build/baseline_results.csv` |
+| B | 截面回归 (0a) `SUE + controls`，两窗口 × 两口径（`pyfixest`，公司/年/月/星期/行业 FE） | `build/baseline_results.csv` |
 | C | 截面回归 (0b) 加 `X × SUE` 交互项 | 同上 |
 | D | 稳健性：连续 SUE / 2000 年后 / 剔除微盘股 / 只保留满窗事件 | — |
+| B.5 | 交叉验证：`pyfixest` 与独立手写实现（numpy 做 FWL 去均值 + 聚类方差）逐系数比对 | 最大偏差 6e-07 |
 
 **核心结果**：对冲组合（D10−D1）的纯漂移 [2,61] 为 **+4.68%（C2C）/ +5.82%（O2O）**，
 对照 BT 1989 的 6.31%；回归中 DRIFT 的 β₁ 在控制公司/行业/日历固定效应与 10 个控制变量后

@@ -133,11 +133,11 @@ chk("PEAD 图数量", len(glob.glob("build/pead_paths*.png")), 3)
 # --- Baseline 回归结果（README「主要结果」一节） ---
 reg = pd.read_csv("build/baseline_results.csv")
 reg = reg[reg["spec"] == "(0a) no interactions"].set_index(["window", "returns"])
-for (w, c), b, t in [(("ANN", "C2C"), 0.0795, 100.5), (("DRIFT", "C2C"), 0.0196, 13.8),
-                     (("ANN", "O2O"), 0.0724, 98.3), (("DRIFT", "O2O"), 0.0301, 20.5)]:
+for (w, c), b, t in [(("ANN", "C2C"), 0.0796, 110.7), (("DRIFT", "C2C"), 0.0291, 15.8),
+                     (("ANN", "O2O"), 0.0731, 119.6), (("DRIFT", "O2O"), 0.0388, 20.3)]:
     chk(f"回归 β₁ {w} {c}", round(float(reg.loc[(w, c), "beta_SUE"]), 4), b, tol=5e-5)
-    chk(f"回归 t  {w} {c}", round(float(reg.loc[(w, c), "t_firm"]), 1), t, tol=0.05)
-chk("回归样本量 N", int(reg.loc[("ANN", "C2C"), "N"]), 302274)
+    chk(f"回归 t  {w} {c}", round(float(reg.loc[(w, c), "t"]), 1), t, tol=0.05)
+chk("回归样本量 N", int(reg.loc[("ANN", "C2C"), "N"]), 302952)
 
 # --- 数据字典 ---
 dd = pd.read_csv("build/data_dictionary.csv")

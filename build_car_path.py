@@ -42,7 +42,7 @@ ev["year"] = ev["anndats"].dt.year
 
 # FOS 分组：断点取自上一日历季度的 SUE 分布，当季的 SUE 值对号入座。
 # 1996 年的事件用得上 1995Q3/Q4 的 SUE —— I/B/E/S 从 1995 年起有数据，那些事件本身
-# 因为日历不完整没有 CAR、不进图，但完全可以拿来当断点，所以 1996Q1 也有上季分位。
+# 因为日历不完整没有 CAR、不进图，但可以拿来当断点，所以 1996Q1 也有上季分位。
 ev["qtr"] = ev["anndats"].dt.to_period("Q")
 qs = sorted(ev["qtr"].unique())
 MIN_Q = 100                                      # 断点至少要有这么多观测才可信

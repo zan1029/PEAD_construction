@@ -5,6 +5,7 @@ data/
 export/
 build/*.parquet
 # 逐事件路径缓存 280 MB，由 build_car_path.py 重建
+build/*.dta
 build/*.npz
 
 # 杂项

@@ -227,10 +227,17 @@ $SUE$ 在回归里始终是 **`sue_rank` = (十分位 − 1)/9 ∈ [0,1]**，不
 阶段二  收益面板导出      export_returns.py             （midway 跑）→ export/ 1 个 parquet
 阶段三  数据准备 8 步     数据准备.ipynb                 （midway 跑）→ build/  16 个文件
 阶段四  组合排序 + 回归    回归准备.ipynb                 （midway 跑）→ build/  结果表与图
+阶段五  日频 AR 面板      准备AR_CAR数据.ipynb           （midway 跑）→ build/ar_daily/  32 个 parquet
+阶段六  LLM signal + Stata  LLMsignal.ipynb            （midway 跑）→ build/analysis_llm.dta
+                            LLM_Att_STATA/*.do          （本地 Stata）→ rtf 表 + 边际效应图
 ```
 
 **所有数据处理都在 notebook 里**，只有阶段二是独立 py 脚本 —— 因为它要单遍流式扫描
 yifei 的 16 GB O2O 面板，跑一次就够，没必要每次执行 notebook 都重跑。
+
+阶段五、六是 baseline 之后加的两条线。阶段五把逐日收益留了下来（见 §9），
+使任意事件日 × 任意窗口都能算 CAR，不必再重扫收益；阶段六换了一套事件级
+LLM signal 的构造口径并把估计搬到 Stata（见 §10）。
 
 ### 0.2 文件清单
 
@@ -241,12 +248,23 @@ yifei 的 16 GB O2O 面板，跑一次就够，没必要每次执行 notebook �
 | `数据准备.ipynb` | 生产 | 8 步流水线，从原始数据到大表 |
 | `回归准备.ipynb` | 生产 | 组合排序 + 事件时间图 + baseline 回归（论文格式表） |
 | `回归结果补充.ipynb` | 生产 | 按 channel 组织的回归：ADOPT（GenAI 采用）、ATT（注意力）；§4 记录 LLM signal 的来源、处理思路与列字典 |
-| `build_llm_signal.py` | 生产 | LLM signal：新闻级预测 → firm-day → 事件窗口，两层产出（约 6 分钟） |
+| `build_llm_signal.py` | 生产 | LLM signal（**旧口径**）：新闻级预测 → firm-day → 事件窗口连乘，两层产出（约 6 分钟） |
 | `build_car_path.py` | 生产 | 事件时间 CAR 路径（343,609 事件 × 122 天 × 2 口径 × 2 种分位，约 20 分钟） |
+| **`准备AR_CAR数据.ipynb`** | **生产** | **日频 AR 面板**：permno × 交易日的全市场收益与异常收益，5,948 万行（约 3 分钟）。见 §9 |
+| **`LLMsignal.ipynb`** | **生产** | **LLM signal（新口径）**：按 `timestamp` 落窗归属，first / average 两种；导出 `analysis_llm.dta` 给 Stata。见 §10 |
+| **`LLM_Att_STATA/llm_signal_test1.do`** | **生产** | **Stata 估计**：`reghdfe` 三档设定 × 两窗口 × 两口径共 12 个模型 + `margins` 边际效应 |
+| `plot_car_by_period.py` | 生产 | 分时段的 PEAD 路径图 |
+| `PEAD分时段绘图.ipynb` | 生产 | 上一脚本的 notebook 版与出图 |
 | `verify_readme.py` | 工具 | 逐条核对本文档引用的数字与实际产物是否一致（84 项，含回归结果）
 | `audit_panel.py` | 工具 | 审计大表的内部逻辑：恒等式、前视偏差、取值域、重复（35 项） |
-| `数据view.ipynb` | 草稿 | 临时查看数据用 |
+| `2009paper绘图trail.ipynb` | 草稿 | 复刻 HLT 2009 Figure 1 / 2（FE 十分位 × low/high-news days） |
 | `export_run.log` | 日志 | `export_returns.py` 的运行记录 |
+
+**两套 LLM signal 并存**，不要混用：`build_llm_signal.py` 是旧口径（按新闻的 `DATE`
+归到 firm-day，再把窗口内各日的 $(1+\overline{pred})$ 连乘），产出 `llm_daily.parquet` /
+`llm_signal.parquet`，`回归结果补充.ipynb` 用的是它；`LLMsignal.ipynb` 是新口径（按新闻
+`timestamp` 是否落在 $[d,d+1]$ 归属，取最早一条或按条平均），产出 `llm_event_signal.parquet` /
+`analysis_llm.dta`，Stata 那条线用的是它。差异见 §10.1。
 
 ### 0.3 运行环境与依赖
 
@@ -324,10 +342,24 @@ I/B/E/S detail ───────────────┼─→ Step 5  SU
                                                                  → Step 8 数据字典
 ```
 
+阶段五、六接在后面，都复用上面已有的产物，不重算任何上游：
+
+```
+CRSP 日频 dlyret ─┐
+                  ├─→ 日频 AR 面板 build/ar_daily/        （§9）
+v5 O2O_RET ───────┤     ar = ret − 同 port25 当日等权收益
+port25 成员/基准 ─┘
+
+pred_YYYY.pkl ─→ 按 timestamp 落 [d,d+1] ─→ llm_event_signal ─┐
+                                                              ├─→ analysis_llm.dta →
+pead_panel（CAR / SUE / ATT / 10 控制变量）────────────────────┘      Stata reghdfe  （§10）
+```
+
 ### 0.6 `build/` 产物清单
 
-19 个 parquet + 2 个 csv + 4 张图。除最终大表外，其余都是各步的中间产物 ——
-独立存盘是为了**改某一个变量的定义时只需重跑对应步骤**，不必全量重建。
+21 个 parquet + `ar_daily/` 下 32 个 + 2 个 csv + 4 张图 + 1 个 dta。除最终大表外，
+其余都是各步的中间产物 —— 独立存盘是为了**改某一个变量的定义时只需重跑对应步骤**，
+不必全量重建。
 
 | 文件 | 由哪步产生 | 行数 | 粒度（主键） | 内容 |
 |---|---|---|---|---|
@@ -350,6 +382,10 @@ I/B/E/S detail ───────────────┼─→ Step 5  SU
 | `llm_signal.parquet` | `build_llm_signal.py` | 517,955 | eid | 各窗口的 `llm_cum`（窗口内 (1+pred) 连乘再减 1）/ `llm_mean` / `llm_ndays` / `llm_n` / `llm_rank`。窗口后缀编码偏移量：`0_1` = [d, d+1]，`m1_1` = [d−1, d+1] |
 | **`pead_panel.parquet`** | **Step 7** | **517,955** | **eid** | **最终大表，75 列**，上述全部合并 + LAG 高阶项 + 日历键。列字典见 §5 |
 | `car_path.parquet` | `build_car_path.py` | 4,880 | 分位口径 × 收益口径 × 十分位 × 事件日 | 事件时间路径：`grouping`（`current` 当季断点 / `prior` 上季断点）/`conv`/`sue_dec`/`event_day`（−60…+61）/`car`/`n`，三张 PEAD 图的数据源 |
+| **`ar_daily/ar_daily_YYYY.parquet`** | `准备AR_CAR数据.ipynb` | 59,487,271 | **permno × 交易日** | **日频 AR 面板**，31 个年度文件共 0.92 GB。列见 §9.1 |
+| **`ar_daily/ar_daily.parquet`** | `准备AR_CAR数据.ipynb` | 59,487,271 | permno × 交易日 | 上面 31 个文件的合并版，0.92 GB，内容完全一致 |
+| **`llm_event_signal.parquet`** | `LLMsignal.ipynb` | 517,955 | eid | **新口径 LLM signal**：`llm_first`/`llm_avg`/`llm_n`/`llm_ts_first`/`llm_ts_last`。有信号事件 188,979（36.5%） |
+| **`analysis_llm.parquet`** | `LLMsignal.ipynb` | 138,523 | eid | Stata 回归样本，33 列。`.dta` 的 parquet 副本 |
 
 **非 parquet 产物**
 
@@ -361,6 +397,10 @@ I/B/E/S detail ───────────────┼─→ Step 5  SU
 | `pead_paths_full.png` | `回归准备.ipynb` §A.3 | 仿 BT (1989) fig.2：公告前后分两段各自从 0 起算 |
 | `pead_paths_breakpoints.png` | `回归准备.ipynb` §A.5 | 当季断点 vs 上季断点（FOS）的路径对照，C2C / O2O 各一行 |
 | `car_path_events.npz` | `build_car_path.py` | 逐事件路径矩阵（343,609 × 122 × 2 口径，280 MB）。换一种分组时可直接重算均值，不必重扫收益。已在 `.gitignore` 中 |
+| `analysis_llm.dta` | `LLMsignal.ipynb` | Stata 回归数据集，138,523 行 × 33 列，30.1 MB，version 118。列字典见 §10.3 |
+| `LLM_Att_STATA/build/reg_llm_{first,avg}.rtf` | `llm_signal_test1.do` | 主表：六列（ANN/DRIFT × 三档设定），只报核心系数 |
+| `LLM_Att_STATA/build/reg_llm_{first,avg}_full.rtf` | `llm_signal_test1.do` | 附表：同样六列，全部系数 |
+| `LLM_Att_STATA/build/margins_att_llm.png` | `llm_signal_test1.do` | $\partial CAR^{DRIFT}/\partial LLM$ 随 ATT 的边际效应图 |
 
 **`eid`** 是事件唯一编号（= `events.parquet` 的行号），`car` / `sue` / `ctrl_lnanalyst` 都用它对齐，
 可以据此回溯任何一个事件在各中间表里的原始值。
@@ -1046,7 +1086,202 @@ PEAD 十分位与 t 值、baseline 回归的 β₁/t/N、数据字典完整性�
 
 ---
 
-## 9. 进度
+## 9. 日频 AR 面板（`准备AR_CAR数据.ipynb`）
+
+Step 4 的 CAR 只在公告事件的三个锚点（`td0−1` / `td0+1` / `td0+61`）上取累积值，
+中间的逐日收益算完就丢。换一套事件日（新闻日、任意日期）或换一个窗口，就得重扫
+6,583 万行收益。这一节把逐日收益留了下来，之后任意事件日 × 任意窗口都只是取下标。
+
+**上游全部现成，一行都不重算**：`data/crsp_daily_YYYY.parquet` 的 `dlyret`（C2C）、
+`export/crsp_daily_ret_c2c_o2o.parquet` 的 `O2O_RET`（O2O）、
+`build/port25_membership.parquet`（成员）、`build/port25_bench_returns.parquet`（基准）。
+
+### 9.1 表结构
+
+`build/ar_daily/ar_daily_YYYY.parquet`，31 个年度文件 + 1 个合并文件 `ar_daily.parquet`，
+各 0.92 GB，内容一致。**59,487,271 行**，粒度 permno × 交易日。
+
+| 列 | 类型 | 含义 |
+|---|---|---|
+| `permno` | int32 | 公司 |
+| `date` | timestamp[ms] | 日历日。写 `pa.timestamp("s")` 落盘也会变 ms —— parquet 规范的 TIMESTAMP 只有 MILLIS/MICROS/NANOS，没有秒精度 |
+| `td_idx` | int32 | 交易日历下标，0–7672。**与 `pead_panel.td0_idx` 同一套** |
+| `port25` | int8 | 该行日期当天所属的 size×B/M 组合，1–25；**0 = 当年没归上组** |
+| `ret_c2c` `ret_o2o` | float32 | 个股日收益 |
+| `bench_c2c` `bench_o2o` | float32 | 同 `port25` 当日等权收益 |
+| `ar_c2c` `ar_o2o` | float32 | $AR_{i,t}=R_{i,t}-R_{p(i),t}$ |
+
+`bench_*` 是冗余列（每天只有 25 个取值），存下来是因为 `ret` 缺失的行推不出
+`ret − ar`，而 O2O 在 2008–2018 有两成行没有收益。
+
+### 9.2 四个必须记住的约定
+
+**① C2C 只能取 `data/crsp_daily_*.parquet`**。项目的 C2C 基准组合就是从这份建的。
+`export` 面板里的 `RET` 来自老 dsf pickle，数值差 ≤1e-6 但**行集每年少几百行**
+（2010 年少 436 行），混用会让个别事件的窗口收益差到几个百分点 —— 实测最大差 0.22。
+
+**② 行集是两个口径的并集**。C2C 或 O2O 有一个有值就留这一行；两个都没有的
+permno-日**不存在**（不是存成 NaN）。CRSP 日频里 `dlyret` 为空的行 2010 年有 29,081
+（1.72%）、2020 年 12,931（0.66%），其中 98% 连价格和成交量都是空的。
+
+**③ 窗口 CAR 要用 buy-and-hold，不能加总逐日 `ar`**。
+
+$$CAR[k_0,k_1]=\prod_{t=d+k_0}^{d+k_1}(1+R_{i,t})-\prod_{t=d+k_0}^{d+k_1}(1+R_{p,t})$$
+
+两次连乘、最后 diff 一次，与 `car.parquet` 同定义。$\prod(1+AR_t)-1$ 与它不等，
+短窗差别很小，`[2,61]` 这种 60 天窗口能差几十个 bp。两个边界规则：
+**窗口内缺的天按收益 0**（等价于持有不动）；**窗口内一天记录都没有要置 NaN 而非 0**
+（全填 0 会得到「异常收益 = 负的基准收益」这种假数），靠数窗口内的行数区分。
+
+**④ 组合归属有两套约定**。本表的 `port25` 跟着日期换组（每年 7 月 1 日）；
+`car.parquet` 那边是**事件时点固定**、整个窗口不换组。`[0,1]` 窗口无所谓，
+`[2,61]` 约有四分之一的事件会跨过 7 月 1 日 —— 算长窗口 CAR 时按后者做。
+
+### 9.3 覆盖率与校验
+
+| 口径 | 有 `ret` | 有 `ar` |
+|---|---|---|
+| C2C | 100% | 52.2% |
+| O2O | 93.4% | 51.9% |
+
+`ar` 只有五成是因为表里含 ETF / ADR / 封闭式基金等没归组的证券，
+**限定 `in_universe` 后是 84–88%**，与事件级的 88.8% 一致。
+O2O 的 `ret` 在 2008–2018 只有 78–95%（v5 源本身如此），2026 年只到 03-30 所以是 48%。
+
+结构检查：`date` 1996-01-02 ~ 2026-06-30、`td_idx` 0–7672 无空洞、7,673 个交易日一天不缺、
+`(permno, td_idx)` 无重复、29,876 个 permno、`port25 = 0` 的行 `ar` 全为 NaN、
+`ar == ret − bench` 在 float32 精度内成立（最大差 3.8e-06）。
+
+**与 `car.parquet` 的逐事件对照**（用本表的日收益重算公告事件的 `CAR[0,1]`）：
+
+| 年份 | C2C | O2O |
+|---|---|---|
+| 2000 | n=18,953，最大差 1.82e-07 | n=18,947，2.17e-07 |
+| 2005 | n=16,918，1.68e-07 | n=16,916，2.37e-07 |
+| 2010 | n=13,941，1.99e-07 | n=13,932，1.75e-07 |
+| 2018 | n=11,431，2.28e-07 | n=11,427，1.82e-07 |
+| 2024 | n=12,421，2.04e-07 | n=12,417，2.01e-07 |
+
+跨 25 年七万多个事件，最大差都在 2e-07 量级，只是 float32 存储的舍入。
+
+### 9.4 两个操作陷阱
+
+**读法**：`pd.read_parquet("build/ar_daily/")`（直接读目录，走 pyarrow dataset）会
+把内存打满被 OOM kill；`pd.concat([pd.read_parquet(f) for f in files])` 全部 31 年只要
+2.2 秒、峰值 4.24 GB。合并文件直接 `pd.read_parquet` 即可（4.6 秒、2.44 GB）。
+
+**重建**：主循环里 `FORCE=True` 会 `shutil.rmtree(AR_DIR)`，合并文件 `ar_daily.parquet`
+放在同一目录下会被一起删掉，重建后要补跑合并那格。
+
+---
+
+## 10. LLM signal 事件级口径与 Stata 回归
+
+`LLMsignal.ipynb` + `LLM_Att_STATA/llm_signal_test1.do`。
+研究问题是 HLT 2009 的 attention channel 加上 LLM 信号：**注意力越稀缺，
+新闻里的信息越难被当期吸收，越多留到漂移里** —— 核心系数是 $ATT\times LLM$。
+
+### 10.1 与旧口径的差别
+
+| | 旧（`build_llm_signal.py`） | 新（`LLMsignal.ipynb`） |
+|---|---|---|
+| 归属规则 | 按新闻的 `DATE`（盘后新闻已推到次日）归到 firm-day，再看 firm-day 是否落窗 | 按新闻 `timestamp` 是否落在 $[d,\ d+1]$ 的**日历区间**内 |
+| 周末新闻 | 随 `DATE` 推到下个交易日 | 窗口按日历日展开，d 是周五时周六日的新闻也算进来 |
+| 聚合 | 各日 $(1+\overline{pred})$ 连乘减 1 | `llm_first` = 时间戳最早一条；`llm_avg` = 窗口内全部新闻**按条**平均 |
+| 标准化 | 回归前除以标准差 | 不标准化，保留原始值（与 CAR 同在收益量纲上） |
+| 产出 | `llm_daily.parquet` / `llm_signal.parquet` | `llm_event_signal.parquet` / `analysis_llm.dta` |
+
+时区在读入时统一：`pred_*.pkl` 的 2004–2018 无时区标注（本身就是 ET 墙上时间），
+2019–2026 带 `America/New_York`，后者 `tz_convert` 到 ET 再 `tz_localize(None)`，
+否则 concat 之后 dtype 退化成 object、排序报错。
+
+### 10.2 构造流程
+
+1. **事件窗口 → 日历日**：`td0_idx + 0` 与 `td0_idx + 1` 查交易日历得到 `win_start` / `win_end`，
+   再按日历天展开成 `(eid, permno, cdate)`。跨周末的窗口展开成 4 天，周末新闻不漏
+2. **逐年扫新闻**：`pred_YYYY.pkl`（2004-01 ~ 2026-03，新闻级）只留 `timestamp` / `PERMNO` / `pred`，
+   `cdate = timestamp.normalize()`，与上一步的键 inner merge。逐年 merge 再攒结果，不整体入内存
+3. **聚合成事件级**：按 `(eid, timestamp)` 稳定排序后 `groupby("eid")` 出 `llm_first`（first）、
+   `llm_avg`（mean）、`llm_n`（size）、首末时间戳；left join 回全部 517,955 个事件，无新闻的 `llm_n` 记 0
+4. **样本筛选**：同日多季报取最新（`is_latest_pends_on_day`）、剔除异常报告滞后（`~flag_lag_bad`）、
+   10 个控制变量与 CAR 齐全、SIC 能映到 FF10、**窗口内至少一条新闻**
+5. **导出**：`to_stata(version=118)`，`ff10` 转 category（Stata 里成带 value label 的整数）
+
+**覆盖**：517,955 个事件里 188,979 个（36.5%）窗口内有新闻。有信号事件的窗口内新闻条数
+中位 2 条、均值 3.05、最大 69，只有 1 条的占 12.2%（这时两种口径完全相同）。
+
+**最终回归样本 138,523 个事件、4,015 家公司、5,069 个公告日、2004–2025 年。**
+
+### 10.3 `analysis_llm.dta` 列字典（33 列）
+
+| 组 | 列 | 说明 |
+|---|---|---|
+| 键与 FE | `eid` `permno` `anndats` `year` `month` `dow` `ff10` `date_id` | `date_id` 是公告日的整数编号，**聚类维度** |
+| 被解释变量 | `car_ann_o2o` `car_drift_o2o` `car_ann_c2c` `car_drift_c2c` | O2O 为主口径（与 `pred` 的训练目标同源），C2C 作对照 |
+| SUE | `sue` `sue_dec` **`sue_rank`** | `sue_rank = (sue_dec − 1)/9 ∈ [0,1]`，进回归的是它，系数直接读作 D10 减 D1 |
+| Attention | `n_ann_day` `nrank` **`att`** | `att = 11 − nrank`，1–10，**越大注意力越充裕** |
+| LLM | `llm_n` **`llm_first`** **`llm_avg`** `llm_ts_first` `llm_ts_last` | 两个 signal 都是原始值，标准差分别 0.0015106 / 0.0013835 |
+| 控制变量 | `size_dec` `bm_dec` `lnanalyst` `lag` `lag2` `lag3` `io` `evol` `epersist` `turn` | 与 baseline 完全相同的 10 个 |
+
+导出时**只出原始变量，交互项交给 Stata 的因子记号**（`c.att#c.llm_first`），
+这样 `margins` 才能正确识别交互结构、算出边际效应。
+
+### 10.4 Stata 设定
+
+固定效应 `absorb(year month dow ff10)`，标准误 `vce(cluster date_id)`。
+三档设定 × 两个窗口 × 两种口径 = 12 个模型：
+
+```stata
+global controls size_dec bm_dec lnanalyst lag lag2 lag3 io evol epersist turn
+global FE absorb(year month dow ff10) vce(cluster date_id)
+
+* (1) 最简
+reghdfe car_ann_o2o sue_rank att llm_first c.att#c.llm_first $controls, $FE
+* (2) 三个两两交互全齐
+reghdfe car_ann_o2o sue_rank att llm_first ///
+    c.att#c.llm_first c.sue_rank#c.att c.sue_rank#c.llm_first $controls, $FE
+* (3) HLT 完整：控制变量分别与 SUE、LLM 交互（回归元 36 个）
+reghdfe car_ann_o2o sue_rank att llm_first ///
+    c.att#c.llm_first c.sue_rank#c.att c.sue_rank#c.llm_first ///
+    $controls c.($controls)#c.sue_rank c.($controls)#c.llm_first, $FE
+```
+
+### 10.5 结果
+
+**核心系数 $b_4$（$ATT\times LLM$），12 格中 11 格为负**：
+
+| 设定 | ANN first | ANN average | DRIFT first | DRIFT average |
+|---|---:|---:|---:|---:|
+| (1) 最简 | −0.2456\*\*\* | −0.0668 | −0.3182\* | −0.4151\* |
+| (2) 两两交互全齐 | −0.3324\*\*\* | −0.1816\*\* | −0.3486\*\* | −0.4694\*\* |
+| (3) HLT 完整 | −0.1539\*\* | +0.0147 | −0.2138 | −0.4130 |
+
+DRIFT 的 6 格全为负，4 格 $p<0.10$、2 格 $p<0.05$。方向与 distraction 假说一致：
+**注意力越充裕（ATT 越大），LLM 信号对漂移的作用越小** —— 信息当期就被吸收了。
+
+**$b_6$（$SUE\times LLM$）在 DRIFT 四格全部 $p\le0.008$**，取值 5.29–5.90：
+盈余意外与新闻同向时漂移更大，两条信息渠道相互放大。
+
+**边际效应**（设定 (2)、DRIFT、$SUE$ 取样本均值 0.5072）：
+
+| $ATT$ | first | 折合 1 个标准差 | average | 折合 1 个标准差 |
+|---:|---:|---:|---:|---:|
+| 1 | 4.31 | 0.65pp | 4.91 | 0.68pp |
+| 5 | 2.92 | 0.44pp | 3.04 | 0.42pp |
+| 10 | 1.18 | 0.18pp | 0.69 | 0.10pp |
+
+从 $ATT=1$ 到 $ATT=10$，边际效应下降 73%（first）与 86%（average）。
+
+⚠️ **ANN 窗口有机械成分**：`pred` 的训练目标是 open$_t\to$open$_{t+1}$ 的收益，
+$CAR^{ANN}$（O2O）覆盖同一段区间。预测虽是滚动样本外的，但被解释变量与训练目标重合，
+ANN 上的 LLM 主效应（$b_3$ 的 $t$ 值 17–26）主要反映"模型预测得准"，不能读作经济发现。
+**DRIFT $[2,61]$ 与训练目标完全不重叠，那里的系数才是干净的。**
+
+全部三张表、附录全系数表与 `marginsplot` 的代码见 `LLMsignal.ipynb` §5–§6。
+
+---
+
+## 11. 进度
 
 ### 已完成：PEAD baseline（`回归准备.ipynb`）
 
@@ -1109,7 +1344,22 @@ LLM signal = 窗口内各日 $(1+\overline{pred})$ 连乘减 1，回归前标准
 所以 ANN 上的 LLM 系数（$t$ 40–60）主要反映"模型预测得准"，不能读作经济发现。
 **DRIFT $[2,61]$ 与训练目标完全不重叠**，那里的系数才是干净的。
 
+### 已完成：日频 AR 面板（`准备AR_CAR数据.ipynb`）
+
+permno × 交易日的全市场收益与异常收益，5,948 万行、1996–2026。详见 §9。
+用它重算公告事件的 `CAR[0,1]`，与 `car.parquet` 跨 25 年七万多个事件最大差 2e-07。
+接下来的 post-news drift 不必再重扫收益。
+
+### 已完成：LLM signal 新口径 + Stata 回归（`LLMsignal.ipynb` / `llm_signal_test1.do`）
+
+按 `timestamp` 落 $[d,d+1]$ 归属，`llm_first`（最早一条）/ `llm_avg`（按条平均）两种口径，
+样本 138,523 个事件、2004–2025。三档设定 × 两窗口 × 两口径共 12 个 `reghdfe`。详见 §10。
+
+**核心系数 $ATT\times LLM$ 在 12 格中 11 格为负**，DRIFT 的 6 格全为负、其中 4 格 $p<0.10$；
+$SUE\times LLM$ 在 DRIFT 四格全部 $p\le0.008$。边际效应从 $ATT=1$ 到 $ATT=10$ 下降 73–86%。
+
 **尚未完成**
+- **post-news drift**：以新闻日为事件日、用 §9 的 AR 面板算任意窗口 CAR
 - **控住收益波动率**后重跑 §5.4 的 (3a)：现在的 $|CAR|$ 回归会机械捡到波动率
 - **更好的 AI 采用度量**：连续的采用强度替代 2022-11-30 的 0/1 断点 —— §2.2 与 §2.3 都显示
   纯日历断点识别不出来

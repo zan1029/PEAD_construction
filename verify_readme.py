@@ -17,7 +17,8 @@ def chk(label, actual, claimed, tol=0):
 
 # --- 目录 ---
 chk("data/ parquet 数", len(glob.glob("data/*.parquet")), 102)
-chk("build/ parquet 数", len(glob.glob("build/*.parquet")), 19)
+chk("build/ parquet 数", len(glob.glob("build/*.parquet")), 21)
+chk("build/ar_daily/ 年度文件数", len(glob.glob("build/ar_daily/ar_daily_[0-9]*.parquet")), 31)
 chk("export/ parquet 数", len(glob.glob("export/*.parquet")), 1)
 
 # --- 原始数据行数 ---
@@ -143,6 +144,28 @@ chk("回归样本量 N", int(reg.loc[("ANN", "C2C"), "N"]), 302952)
 dd = pd.read_csv("build/data_dictionary.csv")
 chk("字典行数", len(dd), 75)
 chk("字典未登记列", int(dd["说明"].astype(str).str.startswith("⚠️").sum()), 0)
+
+# --- §9 日频 AR 面板 ---
+_yf = sorted(glob.glob("build/ar_daily/ar_daily_[0-9]*.parquet"))
+_nar = sum(pq.ParquetFile(f).metadata.num_rows for f in _yf)
+chk("ar_daily 年度合计行数", _nar, 59487271)
+if os.path.exists("build/ar_daily/ar_daily.parquet"):
+    chk("ar_daily 合并文件行数", pq.ParquetFile("build/ar_daily/ar_daily.parquet").metadata.num_rows, _nar)
+
+# --- §10 LLM signal 新口径 ---
+_ls = pd.read_parquet("build/llm_event_signal.parquet", columns=["llm_n"])
+chk("llm_event_signal 行数", len(_ls), 517955)
+chk("有信号事件数", int((_ls["llm_n"] > 0).sum()), 188979)
+_al = pd.read_parquet("build/analysis_llm.parquet",
+                      columns=["permno", "date_id", "anndats", "llm_first", "llm_avg", "sue_rank"])
+chk("analysis_llm 行数", len(_al), 138523)
+chk("analysis_llm 公司数", _al["permno"].nunique(), 4015)
+chk("analysis_llm 聚类数", _al["date_id"].nunique(), 5069)
+chk("analysis_llm 起年", int(_al["anndats"].dt.year.min()), 2004)
+chk("analysis_llm 止年", int(_al["anndats"].dt.year.max()), 2025)
+chk("llm_first 标准差", round(float(_al["llm_first"].std()), 7), 0.0015106, tol=5e-8)
+chk("llm_avg 标准差", round(float(_al["llm_avg"].std()), 7), 0.0013835, tol=5e-8)
+chk("sue_rank 均值", round(float(_al["sue_rank"].mean()), 4), 0.5072, tol=5e-5)
 
 print(f"通过 {len(OK)} 项")
 if BAD:

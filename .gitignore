@@ -5,8 +5,12 @@ data/
 export/
 build/*.parquet
 build/*.dta
+# 日频 AR 面板 1.8 GB（31 个年度文件 + 合并版），由 准备AR_CAR数据.ipynb 重建
+build/ar_daily/
 # 逐事件路径缓存 280 MB，由 build_car_path.py 重建
 build/*.npz
+# Stata 数据集（各处 build/ 下），由 LLMsignal.ipynb 重建
+**/*.dta
 
 # 杂项
 *.log
